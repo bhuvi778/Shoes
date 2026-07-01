@@ -52,6 +52,15 @@ app.use(
   })
 );
 
+app.get("/", (_req, res) => {
+  res.json({
+    ok: true,
+    service: "qadam-shoe-store-api",
+    message: "Backend is running. Use /api/health, /api/products, /api/brands, or /api/testimonials.",
+    database: mongoReady ? "mongodb" : "seed-data"
+  });
+});
+
 function shapeProducts(products) {
   return products.map((product) => {
     const item = product.toObject ? product.toObject() : product;
