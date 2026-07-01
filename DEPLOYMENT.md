@@ -27,9 +27,10 @@ You can import the repo root directly. The root `vercel.json` builds `frontend`.
 
 Vercel environment variables:
 
-- `VITE_API_URL=https://your-render-service.onrender.com`
+- `VITE_API_URL=https://shoes-3ez9.onrender.com`
 
 After the Vercel URL is created, put that full URL into Render's `CLIENT_URLS` value and redeploy/restart the Render service.
+The backend also allows `.vercel.app` domains by default through `CLIENT_URL_SUFFIXES`.
 
 ## 3. Smoke tests
 

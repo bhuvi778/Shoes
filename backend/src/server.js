@@ -12,6 +12,10 @@ const clientUrls = (process.env.CLIENT_URLS || "http://localhost:5176,http://loc
   .split(",")
   .map((url) => url.trim())
   .filter(Boolean);
+const clientUrlSuffixes = (process.env.CLIENT_URL_SUFFIXES || ".vercel.app")
+  .split(",")
+  .map((suffix) => suffix.trim())
+  .filter(Boolean);
 
 let mongoReady = false;
 
@@ -42,7 +46,10 @@ app.use(express.json());
 app.use(
   cors({
     origin(origin, callback) {
-      if (!origin || clientUrls.includes(origin)) {
+      const hostname = origin ? new URL(origin).hostname : "";
+      const allowedBySuffix = clientUrlSuffixes.some((suffix) => hostname === suffix.replace(/^\./, "") || hostname.endsWith(suffix));
+
+      if (!origin || clientUrls.includes(origin) || allowedBySuffix) {
         callback(null, true);
         return;
       }
