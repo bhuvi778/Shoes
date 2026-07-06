@@ -14,9 +14,11 @@ export default function ProductDetailPage({
   onBack
 }) {
   const [selectedSize, setSelectedSize] = useState(product?.sizes?.[0] || null);
+  const [selectedImage, setSelectedImage] = useState(product?.images?.[0] || product?.image || "");
 
   useEffect(() => {
     setSelectedSize(product?.sizes?.[0] || null);
+    setSelectedImage(product?.images?.[0] || product?.image || "");
   }, [product]);
 
   if (!product) {
@@ -35,8 +37,24 @@ export default function ProductDetailPage({
       </button>
 
       <section className="detail-layout">
-        <div className="detail-media">
-          <img src={product.image} alt={product.name} />
+        <div className="detail-gallery">
+          <div className="detail-media">
+            <img src={selectedImage || product.image} alt={product.name} />
+          </div>
+          {(product.images?.length ? product.images : [product.image]).length > 1 && (
+            <div className="detail-thumbs" aria-label="Product images">
+              {(product.images?.length ? product.images : [product.image]).map((image) => (
+                <button
+                  className={selectedImage === image ? "is-active" : ""}
+                  type="button"
+                  key={image}
+                  onClick={() => setSelectedImage(image)}
+                >
+                  <img src={image} alt="" />
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div className="detail-copy">
           <p className="eyebrow">{product.brand}</p>

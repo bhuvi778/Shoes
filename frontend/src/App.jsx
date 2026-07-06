@@ -12,6 +12,7 @@ import CollectionPage from "./pages/CollectionPage.jsx";
 import ProductDetailPage from "./pages/ProductDetailPage.jsx";
 import FavoritesPage from "./pages/FavoritesPage.jsx";
 import DashboardPage from "./pages/DashboardPage.jsx";
+import AdminPage from "./pages/AdminPage.jsx";
 
 export default function App() {
   const [page, setPage] = useState("home");
@@ -20,6 +21,8 @@ export default function App() {
   const [products, setProducts] = useState([]);
   const [allProducts, setAllProducts] = useState([]);
   const [brands, setBrands] = useState([]);
+  const [categoryCards, setCategoryCards] = useState([]);
+  const [siteSettings, setSiteSettings] = useState(null);
   const [testimonials, setTestimonials] = useState([]);
   const [status, setStatus] = useState("loading");
   const [favorites, setFavorites] = useState(() => new Set());
@@ -57,10 +60,20 @@ export default function App() {
         .slice(0, 4)
     : [];
 
-  useEffect(() => {
+  function reloadStorefrontData() {
+    fetch(apiPath("/api/settings"))
+      .then((response) => response.json())
+      .then((data) => setSiteSettings(data.settings || null))
+      .catch((error) => console.error(error));
+
     fetch(apiPath("/api/products"))
       .then((response) => response.json())
       .then((data) => setAllProducts(data.products || []))
+      .catch((error) => console.error(error));
+
+    fetch(apiPath("/api/categories"))
+      .then((response) => response.json())
+      .then((data) => setCategoryCards(data.categories || []))
       .catch((error) => console.error(error));
 
     fetch(apiPath("/api/brands"))
@@ -72,6 +85,10 @@ export default function App() {
       .then((response) => response.json())
       .then((data) => setTestimonials(data.testimonials || []))
       .catch((error) => console.error(error));
+  }
+
+  useEffect(() => {
+    reloadStorefrontData();
   }, []);
 
   useEffect(() => {
@@ -292,6 +309,10 @@ export default function App() {
   }
 
   function renderPage() {
+    if (page === "admin") {
+      return <AdminPage onDataChanged={reloadStorefrontData} />;
+    }
+
     if (page === "collection") {
       return (
         <CollectionPage
@@ -362,13 +383,16 @@ export default function App() {
     return (
       <HomePage
         brands={brands}
+        categories={categoryCards}
         products={allProducts}
+        settings={siteSettings}
         testimonials={testimonials}
         favorites={favorites}
         onFavorite={toggleFavorite}
         onAddToCart={addToCart}
         onOpenDetails={openDetails}
         onOpenCollection={openCollection}
+        onSetCategory={(category) => setFilters((current) => ({ ...current, category }))}
         onSetBrand={(brand) => setFilters((current) => ({ ...current, brand }))}
       />
     );
@@ -384,6 +408,7 @@ export default function App() {
         onOpenCollection={openCollection}
         onGoSection={goHomeSection}
         onShowSale={showHeaderSale}
+        onOpenAdmin={() => setPage("admin")}
         onFocusSearch={focusSearch}
         onOpenFavorites={() => setPage("favorites")}
         onOpenAccount={openAccount}

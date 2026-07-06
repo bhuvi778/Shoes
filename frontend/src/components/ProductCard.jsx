@@ -2,10 +2,12 @@ import { Heart, ShoppingBag, Star } from "lucide-react";
 import { inr } from "../lib/format.js";
 
 export default function ProductCard({ product, isFavorite, onFavorite, onAddToCart, onOpenDetails }) {
+  const image = product.images?.[0] || product.image;
+
   return (
     <article className="product-card" onClick={() => onOpenDetails(product)} role="button" tabIndex={0}>
       <div className="product-media">
-        <img src={product.image} alt={product.name} loading="lazy" />
+        <img src={image} alt={product.name} loading="lazy" />
         {product.badge && <span className={`badge ${product.badge === "NEW" ? "is-new" : ""}`}>{product.badge}</span>}
         <button
           className={`favorite-button ${isFavorite ? "is-active" : ""}`}

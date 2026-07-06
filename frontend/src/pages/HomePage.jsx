@@ -5,31 +5,54 @@ import ProductCard from "../components/ProductCard.jsx";
 
 export default function HomePage({
   brands,
+  categories,
   products,
+  settings,
   testimonials,
   favorites,
   onFavorite,
   onAddToCart,
   onOpenDetails,
   onOpenCollection,
+  onSetCategory,
   onSetBrand
 }) {
   const featuredProducts = products.slice(0, 4);
+  const hero = settings?.hero || {};
+  const theme = settings?.theme || {};
+  const heroMediaUrl = hero.mediaUrl || "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=2400&q=90";
+  const mobileHeroMediaUrl = hero.mobileMediaUrl || heroMediaUrl;
 
   return (
-    <main id="top">
-      <section className="hero" aria-label="Summer 2026 collection">
+    <main
+      id="top"
+      style={{
+        "--bg": theme.background || undefined,
+        "--panel": theme.panel || undefined
+      }}
+    >
+      <section className="hero" aria-label={hero.eyebrow || "Storefront hero"}>
+        <div className="hero-media" aria-hidden="true">
+          {hero.mediaType === "video" ? (
+            <video src={heroMediaUrl} poster={hero.videoPoster || mobileHeroMediaUrl} autoPlay muted loop playsInline />
+          ) : (
+            <picture>
+              <source media="(max-width: 640px)" srcSet={mobileHeroMediaUrl} />
+              <img src={heroMediaUrl} alt="" />
+            </picture>
+          )}
+        </div>
         <div className="hero-overlay" />
         <div className="hero-copy">
-          <p className="eyebrow">Summer 2026 Collection</p>
-          <h1>Move Without Compromise.</h1>
-          <p className="hero-text">Shop performance runners, casual sneakers, leather shoes, and weather-ready boots by brand, fit, and purpose.</p>
+          <p className="eyebrow">{hero.eyebrow || "Summer 2026 Collection"}</p>
+          <h1>{hero.title || "Move Without Compromise."}</h1>
+          <p className="hero-text">{hero.text || "Shop performance runners, casual sneakers, leather shoes, and weather-ready boots by brand, fit, and purpose."}</p>
           <div className="hero-actions">
             <button className="primary-button" type="button" onClick={onOpenCollection}>
-              Shop Now
+              {hero.primaryCta || "Shop Now"}
             </button>
             <button className="secondary-link" type="button" onClick={() => document.getElementById("brands")?.scrollIntoView({ behavior: "smooth" })}>
-              Explore brands <ArrowRight />
+              {hero.secondaryCta || "Explore brands"} <ArrowRight />
             </button>
           </div>
         </div>
@@ -39,6 +62,30 @@ export default function HomePage({
               <strong>{stat.value}</strong>
               <span>{stat.label}</span>
             </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="brand-section" id="categories">
+        <div className="section-kicker">
+          <p className="eyebrow">Shop by category</p>
+          <h2>Category images are controlled from product admin fields.</h2>
+        </div>
+        <div className="brand-grid">
+          {(categories || []).map((category) => (
+            <button
+              className="brand-card"
+              type="button"
+              key={category.name}
+              onClick={() => {
+                onSetCategory(category.name);
+                onOpenCollection();
+              }}
+            >
+              <img src={category.image} alt="" loading="lazy" />
+              <span>{category.name}</span>
+              <strong>{category.count} styles from {inr(category.fromPrice)}</strong>
+            </button>
           ))}
         </div>
       </section>
