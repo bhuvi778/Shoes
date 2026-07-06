@@ -151,7 +151,7 @@ function verifyPassword(password, salt, expectedHash) {
 
 function signAdminToken(admin) {
   const payload = {
-    sub: String(admin._id),
+    sub: admin._id ? String(admin._id) : "env-admin",
     email: admin.email,
     exp: Math.floor(Date.now() / 1000) + 60 * 60 * 12
   };
@@ -480,13 +480,25 @@ app.get("/api/products/:slug", async (req, res, next) => {
 
 app.post("/api/admin/login", async (req, res, next) => {
   try {
+    const email = String(req.body.email || "").trim().toLowerCase();
+    const password = String(req.body.password || "");
+
     if (!mongoReady) {
-      res.status(503).json({ message: "MongoDB is required for admin login" });
+      if (email === adminEmail.toLowerCase() && password === adminPassword) {
+        const admin = { email: adminEmail, name: "Store Admin" };
+        res.json({
+          token: signAdminToken(admin),
+          admin,
+          mode: "seed-data",
+          message: "MongoDB is not connected. Dashboard is available in read-only seed-data mode."
+        });
+        return;
+      }
+
+      res.status(503).json({ message: "MongoDB is not connected. Check Render MONGODB_URI and Atlas Network Access." });
       return;
     }
 
-    const email = String(req.body.email || "").trim().toLowerCase();
-    const password = String(req.body.password || "");
     const admin = await Admin.findOne({ email });
     if (!admin || !verifyPassword(password, admin.salt, admin.passwordHash)) {
       res.status(401).json({ message: "Invalid admin credentials" });

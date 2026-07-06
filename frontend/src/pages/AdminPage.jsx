@@ -165,7 +165,7 @@ export default function AdminPage({ onDataChanged }) {
       if (!response.ok) throw new Error(data.message || "Login failed");
       localStorage.setItem("qadam_admin_token", data.token);
       setToken(data.token);
-      setMessage(`Signed in as ${data.admin.email}`);
+      setMessage(data.message || `Signed in as ${data.admin.email}`);
     } catch (error) {
       setMessage(error.message);
     } finally {
