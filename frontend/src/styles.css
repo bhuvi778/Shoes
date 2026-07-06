@@ -1856,16 +1856,43 @@ button {
   }
 
   .hero {
-    min-height: 760px;
+    min-height: auto;
+    gap: 18px;
+    padding: 26px 20px 24px;
+    background: linear-gradient(180deg, #151515 0%, var(--bg) 100%);
   }
 
   .hero-media {
-    opacity: 0.32;
+    position: relative;
+    inset: auto;
+    order: 2;
+    z-index: 0;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    opacity: 1;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    background:
+      radial-gradient(circle at 72% 40%, rgba(255, 255, 255, 0.13), transparent 38%),
+      #222;
+  }
+
+  .hero-media img,
+  .hero-media video {
+    object-fit: contain;
+    object-position: center;
+    padding: 4%;
+  }
+
+  .hero-overlay,
+  .hero::after {
+    display: none;
   }
 
   .hero-copy {
-    margin: 0 24px 58px;
-    width: calc(100% - 48px);
+    order: 1;
+    margin: 0;
+    width: 100%;
   }
 
   .hero h1 {
@@ -1912,8 +1939,22 @@ button {
   }
 
   .hero-stats {
-    grid-template-columns: 1fr;
-    margin: 0 20px 22px;
+    order: 3;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+    margin: 0;
+  }
+
+  .hero-stats div {
+    padding: 16px 14px;
+  }
+
+  .hero-stats strong {
+    font-size: 30px;
+  }
+
+  .hero-stats span {
+    font-size: 12px;
   }
 
   .shop-controls {
@@ -2006,6 +2047,7 @@ button {
 
   .main-nav {
     font-size: 14px;
+    gap: 16px;
   }
 
   .header-actions {
@@ -2013,16 +2055,17 @@ button {
   }
 
   .hero {
-    min-height: 620px;
+    padding: 20px 18px 22px;
   }
 
   .hero-media {
-    opacity: 0.16;
+    aspect-ratio: 1 / 0.82;
+    min-height: 285px;
   }
 
   .hero-copy {
-    margin: 0 18px 44px;
-    width: calc(100% - 36px);
+    margin: 0;
+    width: 100%;
   }
 
   .eyebrow {
@@ -2032,7 +2075,7 @@ button {
   }
 
   .hero h1 {
-    font-size: 48px;
+    font-size: 46px;
   }
 
   .primary-button {
@@ -2060,6 +2103,23 @@ button {
   .hero-actions {
     align-items: flex-start;
     flex-direction: column;
+    gap: 18px;
+  }
+
+  .hero-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .hero-stats div {
+    padding: 14px 10px;
+  }
+
+  .hero-stats strong {
+    font-size: 25px;
+  }
+
+  .hero-stats span {
+    font-size: 11px;
   }
 
   .split-copy {

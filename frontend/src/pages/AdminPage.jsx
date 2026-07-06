@@ -154,6 +154,19 @@ export default function AdminPage({ onDataChanged }) {
     setProductForm(emptyProduct);
   }
 
+  function readMediaFile(file, onReady) {
+    if (!file) return;
+    if (file.size > 12 * 1024 * 1024) {
+      setMessage("File is too large. Use a hosted URL for videos larger than 12MB.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => onReady(String(reader.result || ""));
+    reader.onerror = () => setMessage("Could not read selected media file.");
+    reader.readAsDataURL(file);
+  }
+
   async function saveSettings(event) {
     event.preventDefault();
     setLoading(true);
@@ -287,8 +300,39 @@ export default function AdminPage({ onDataChanged }) {
             <input value={settings.hero?.mediaUrl || ""} onChange={(event) => setSettings((current) => ({ ...current, hero: { ...current.hero, mediaUrl: event.target.value } }))} />
           </label>
           <label>
+            <span>Upload hero image/video up to 12MB</span>
+            <input
+              type="file"
+              accept="image/*,video/mp4,video/webm,video/ogg"
+              onChange={(event) =>
+                readMediaFile(event.target.files?.[0], (mediaUrl) =>
+                  setSettings((current) => ({
+                    ...current,
+                    hero: {
+                      ...current.hero,
+                      mediaUrl,
+                      mediaType: event.target.files?.[0]?.type.startsWith("video/") ? "video" : "image"
+                    }
+                  }))
+                )
+              }
+            />
+          </label>
+          <label>
             <span>Mobile hero image URL optional</span>
             <input value={settings.hero?.mobileMediaUrl || ""} onChange={(event) => setSettings((current) => ({ ...current, hero: { ...current.hero, mobileMediaUrl: event.target.value } }))} />
+          </label>
+          <label>
+            <span>Upload mobile hero image optional</span>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(event) =>
+                readMediaFile(event.target.files?.[0], (mobileMediaUrl) =>
+                  setSettings((current) => ({ ...current, hero: { ...current.hero, mobileMediaUrl } }))
+                )
+              }
+            />
           </label>
           <label>
             <span>Video poster URL optional</span>

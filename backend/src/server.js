@@ -103,7 +103,7 @@ const adminSchema = new mongoose.Schema(
 const SiteSettings = mongoose.model("SiteSettings", siteSettingsSchema);
 const Admin = mongoose.model("Admin", adminSchema);
 
-app.use(express.json());
+app.use(express.json({ limit: "15mb" }));
 app.use(
   cors({
     origin(origin, callback) {
