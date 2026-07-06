@@ -34,7 +34,15 @@ const defaultSiteSettings = {
     mediaType: "image",
     mediaUrl: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=2400&q=90",
     mobileMediaUrl: "",
-    videoPoster: ""
+    videoPoster: "",
+    mediaItems: [
+      {
+        type: "image",
+        url: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=2400&q=90",
+        mobileUrl: "",
+        poster: ""
+      }
+    ]
   },
   theme: {
     background: "#171717",
@@ -80,7 +88,15 @@ const siteSettingsSchema = new mongoose.Schema(
       mediaType: { type: String, enum: ["image", "video"], default: "image" },
       mediaUrl: String,
       mobileMediaUrl: String,
-      videoPoster: String
+      videoPoster: String,
+      mediaItems: [
+        {
+          type: { type: String, enum: ["image", "video"], default: "image" },
+          url: String,
+          mobileUrl: String,
+          poster: String
+        }
+      ]
     },
     theme: {
       background: String,
@@ -231,18 +247,42 @@ function validateProduct(product) {
 }
 
 function sanitizeSettings(body) {
+  const legacyHero = body.hero || {};
+  const mediaItems = Array.isArray(legacyHero.mediaItems)
+    ? legacyHero.mediaItems
+        .map((item) => ({
+          type: item?.type === "video" ? "video" : "image",
+          url: String(item?.url || "").trim(),
+          mobileUrl: String(item?.mobileUrl || "").trim(),
+          poster: String(item?.poster || "").trim()
+        }))
+        .filter((item) => item.url)
+    : [];
+  const fallbackMediaUrl = String(legacyHero.mediaUrl || defaultSiteSettings.hero.mediaUrl).trim();
+  const normalizedMediaItems = mediaItems.length
+    ? mediaItems
+    : [
+        {
+          type: legacyHero.mediaType === "video" ? "video" : "image",
+          url: fallbackMediaUrl,
+          mobileUrl: String(legacyHero.mobileMediaUrl || "").trim(),
+          poster: String(legacyHero.videoPoster || "").trim()
+        }
+      ];
+
   return {
     key: "main",
     hero: {
-      eyebrow: String(body.hero?.eyebrow || defaultSiteSettings.hero.eyebrow).trim(),
-      title: String(body.hero?.title || defaultSiteSettings.hero.title).trim(),
-      text: String(body.hero?.text || defaultSiteSettings.hero.text).trim(),
-      primaryCta: String(body.hero?.primaryCta || defaultSiteSettings.hero.primaryCta).trim(),
-      secondaryCta: String(body.hero?.secondaryCta || defaultSiteSettings.hero.secondaryCta).trim(),
-      mediaType: body.hero?.mediaType === "video" ? "video" : "image",
-      mediaUrl: String(body.hero?.mediaUrl || defaultSiteSettings.hero.mediaUrl).trim(),
-      mobileMediaUrl: String(body.hero?.mobileMediaUrl || "").trim(),
-      videoPoster: String(body.hero?.videoPoster || "").trim()
+      eyebrow: String(legacyHero.eyebrow || defaultSiteSettings.hero.eyebrow).trim(),
+      title: String(legacyHero.title || defaultSiteSettings.hero.title).trim(),
+      text: String(legacyHero.text || defaultSiteSettings.hero.text).trim(),
+      primaryCta: String(legacyHero.primaryCta || defaultSiteSettings.hero.primaryCta).trim(),
+      secondaryCta: String(legacyHero.secondaryCta || defaultSiteSettings.hero.secondaryCta).trim(),
+      mediaType: normalizedMediaItems[0]?.type || "image",
+      mediaUrl: normalizedMediaItems[0]?.url || defaultSiteSettings.hero.mediaUrl,
+      mobileMediaUrl: normalizedMediaItems[0]?.mobileUrl || "",
+      videoPoster: normalizedMediaItems[0]?.poster || "",
+      mediaItems: normalizedMediaItems
     },
     theme: {
       background: String(body.theme?.background || defaultSiteSettings.theme.background).trim(),

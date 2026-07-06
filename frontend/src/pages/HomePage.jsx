@@ -1,4 +1,5 @@
-import { ArrowRight, Mail, Star } from "lucide-react";
+import { ArrowLeft, ArrowRight, Mail, Star } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { editorials, quickStats, trustItems } from "../lib/constants.js";
 import { inr } from "../lib/format.js";
 import ProductCard from "../components/ProductCard.jsx";
@@ -20,8 +21,37 @@ export default function HomePage({
   const featuredProducts = products.slice(0, 4);
   const hero = settings?.hero || {};
   const theme = settings?.theme || {};
-  const heroMediaUrl = hero.mediaUrl || "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=2400&q=90";
-  const mobileHeroMediaUrl = hero.mobileMediaUrl || heroMediaUrl;
+  const heroSlides = useMemo(() => {
+    const fallbackUrl = hero.mediaUrl || "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=2400&q=90";
+    const slides = Array.isArray(hero.mediaItems) && hero.mediaItems.length > 0
+      ? hero.mediaItems
+      : [{ type: hero.mediaType || "image", url: fallbackUrl, mobileUrl: hero.mobileMediaUrl || "", poster: hero.videoPoster || "" }];
+    return slides.filter((slide) => slide?.url);
+  }, [hero.mediaItems, hero.mediaType, hero.mediaUrl, hero.mobileMediaUrl, hero.videoPoster]);
+  const [activeHeroIndex, setActiveHeroIndex] = useState(0);
+  const activeHeroSlide = heroSlides[activeHeroIndex] || heroSlides[0] || {};
+  const activeHeroUrl = activeHeroSlide.url || "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=2400&q=90";
+  const activeMobileHeroUrl = activeHeroSlide.mobileUrl || activeHeroUrl;
+
+  useEffect(() => {
+    setActiveHeroIndex(0);
+  }, [heroSlides.length]);
+
+  useEffect(() => {
+    if (heroSlides.length <= 1) return undefined;
+    const timer = window.setInterval(() => {
+      setActiveHeroIndex((current) => (current + 1) % heroSlides.length);
+    }, 6500);
+    return () => window.clearInterval(timer);
+  }, [heroSlides.length]);
+
+  function showPreviousHeroSlide() {
+    setActiveHeroIndex((current) => (current - 1 + heroSlides.length) % heroSlides.length);
+  }
+
+  function showNextHeroSlide() {
+    setActiveHeroIndex((current) => (current + 1) % heroSlides.length);
+  }
 
   return (
     <main
@@ -32,14 +62,35 @@ export default function HomePage({
       }}
     >
       <section className="hero" aria-label={hero.eyebrow || "Storefront hero"}>
-        <div className="hero-media" aria-hidden="true">
-          {hero.mediaType === "video" ? (
-            <video src={heroMediaUrl} poster={hero.videoPoster || mobileHeroMediaUrl} autoPlay muted loop playsInline />
+        <div className="hero-media">
+          {activeHeroSlide.type === "video" ? (
+            <video key={activeHeroUrl} src={activeHeroUrl} poster={activeHeroSlide.poster || activeMobileHeroUrl} autoPlay muted loop playsInline />
           ) : (
             <picture>
-              <source media="(max-width: 640px)" srcSet={mobileHeroMediaUrl} />
-              <img src={heroMediaUrl} alt="" />
+              <source media="(max-width: 640px)" srcSet={activeMobileHeroUrl} />
+              <img key={activeHeroUrl} src={activeHeroUrl} alt="" />
             </picture>
+          )}
+          {heroSlides.length > 1 && (
+            <div className="hero-slider-controls" aria-label="Hero media slider">
+              <button type="button" onClick={showPreviousHeroSlide} aria-label="Previous hero media">
+                <ArrowLeft />
+              </button>
+              <div className="hero-slider-dots">
+                {heroSlides.map((slide, index) => (
+                  <button
+                    className={index === activeHeroIndex ? "is-active" : ""}
+                    type="button"
+                    key={`${slide.url}-${index}`}
+                    onClick={() => setActiveHeroIndex(index)}
+                    aria-label={`Show hero media ${index + 1}`}
+                  />
+                ))}
+              </div>
+              <button type="button" onClick={showNextHeroSlide} aria-label="Next hero media">
+                <ArrowRight />
+              </button>
+            </div>
           )}
         </div>
         <div className="hero-overlay" />

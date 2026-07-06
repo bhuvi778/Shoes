@@ -49,7 +49,8 @@ const defaultSettings = {
     mediaType: "image",
     mediaUrl: "",
     mobileMediaUrl: "",
-    videoPoster: ""
+    videoPoster: "",
+    mediaItems: []
   },
   theme: {
     background: "#171717",
@@ -63,6 +64,13 @@ const navItems = [
   { id: "products", label: "Products", icon: ShoppingBag },
   { id: "customers", label: "Customers", icon: Users }
 ];
+
+const emptyHeroSlide = {
+  type: "image",
+  url: "",
+  mobileUrl: "",
+  poster: ""
+};
 
 function toFormProduct(product) {
   return {
@@ -195,6 +203,62 @@ export default function AdminPage({ onDataChanged }) {
     reader.readAsDataURL(file);
   }
 
+  function getHeroSlides() {
+    const items = Array.isArray(settings.hero?.mediaItems) && settings.hero.mediaItems.length > 0
+      ? settings.hero.mediaItems
+      : [
+          {
+            type: settings.hero?.mediaType || "image",
+            url: settings.hero?.mediaUrl || "",
+            mobileUrl: settings.hero?.mobileMediaUrl || "",
+            poster: settings.hero?.videoPoster || ""
+          }
+        ];
+    return items.length ? items : [{ ...emptyHeroSlide }];
+  }
+
+  function updateHeroSlide(index, patch) {
+    const slides = getHeroSlides().map((slide, slideIndex) => (slideIndex === index ? { ...slide, ...patch } : slide));
+    setSettings((current) => ({
+      ...current,
+      hero: {
+        ...current.hero,
+        mediaType: slides[0]?.type || "image",
+        mediaUrl: slides[0]?.url || "",
+        mobileMediaUrl: slides[0]?.mobileUrl || "",
+        videoPoster: slides[0]?.poster || "",
+        mediaItems: slides
+      }
+    }));
+  }
+
+  function addHeroSlide() {
+    const slides = [...getHeroSlides(), { ...emptyHeroSlide }];
+    setSettings((current) => ({
+      ...current,
+      hero: {
+        ...current.hero,
+        mediaItems: slides
+      }
+    }));
+  }
+
+  function removeHeroSlide(index) {
+    const slides = getHeroSlides().filter((_, slideIndex) => slideIndex !== index);
+    const nextSlides = slides.length ? slides : [{ ...emptyHeroSlide }];
+    setSettings((current) => ({
+      ...current,
+      hero: {
+        ...current.hero,
+        mediaType: nextSlides[0]?.type || "image",
+        mediaUrl: nextSlides[0]?.url || "",
+        mobileMediaUrl: nextSlides[0]?.mobileUrl || "",
+        videoPoster: nextSlides[0]?.poster || "",
+        mediaItems: nextSlides
+      }
+    }));
+  }
+
   async function saveSettings(event) {
     event.preventDefault();
     setLoading(true);
@@ -316,84 +380,121 @@ export default function AdminPage({ onDataChanged }) {
   }
 
   function renderStorefront() {
+    const heroSlides = getHeroSlides();
+
     return (
-      <form className="admin-card admin-form" onSubmit={saveSettings}>
-        <div className="admin-card-title">
-          <Video />
-          <h2>Hero, video and theme controls</h2>
-        </div>
-        <label>
-          <span>Hero eyebrow</span>
-          <input value={settings.hero?.eyebrow || ""} onChange={(event) => setSettings((current) => ({ ...current, hero: { ...current.hero, eyebrow: event.target.value } }))} />
-        </label>
-        <label>
-          <span>Hero title</span>
-          <input value={settings.hero?.title || ""} onChange={(event) => setSettings((current) => ({ ...current, hero: { ...current.hero, title: event.target.value } }))} />
-        </label>
-        <label>
-          <span>Hero text</span>
-          <textarea value={settings.hero?.text || ""} onChange={(event) => setSettings((current) => ({ ...current, hero: { ...current.hero, text: event.target.value } }))} />
-        </label>
-        <div className="admin-two">
+      <form className="admin-storefront-grid" onSubmit={saveSettings}>
+        <section className="admin-card admin-form">
+          <div className="admin-card-title">
+            <Store />
+            <h2>Content and theme</h2>
+          </div>
           <label>
-            <span>Media type</span>
-            <select value={settings.hero?.mediaType || "image"} onChange={(event) => setSettings((current) => ({ ...current, hero: { ...current.hero, mediaType: event.target.value } }))}>
-              <option value="image">Image</option>
-              <option value="video">Video</option>
-            </select>
+            <span>Hero eyebrow</span>
+            <input value={settings.hero?.eyebrow || ""} onChange={(event) => setSettings((current) => ({ ...current, hero: { ...current.hero, eyebrow: event.target.value } }))} />
           </label>
           <label>
-            <span>Background color</span>
-            <input value={settings.theme?.background || "#171717"} onChange={(event) => setSettings((current) => ({ ...current, theme: { ...current.theme, background: event.target.value } }))} />
+            <span>Hero title</span>
+            <input value={settings.hero?.title || ""} onChange={(event) => setSettings((current) => ({ ...current, hero: { ...current.hero, title: event.target.value } }))} />
           </label>
-        </div>
-        <label>
-          <span>Hero image/video URL</span>
-          <input value={settings.hero?.mediaUrl || ""} onChange={(event) => setSettings((current) => ({ ...current, hero: { ...current.hero, mediaUrl: event.target.value } }))} />
-        </label>
-        <label>
-          <span>Upload hero image/video up to 12MB</span>
-          <input
-            type="file"
-            accept="image/*,video/mp4,video/webm,video/ogg"
-            onChange={(event) =>
-              readMediaFile(event.target.files?.[0], (mediaUrl) =>
-                setSettings((current) => ({
-                  ...current,
-                  hero: {
-                    ...current.hero,
-                    mediaUrl,
-                    mediaType: event.target.files?.[0]?.type.startsWith("video/") ? "video" : "image"
-                  }
-                }))
-              )
-            }
-          />
-        </label>
-        <label>
-          <span>Mobile hero image URL optional</span>
-          <input value={settings.hero?.mobileMediaUrl || ""} onChange={(event) => setSettings((current) => ({ ...current, hero: { ...current.hero, mobileMediaUrl: event.target.value } }))} />
-        </label>
-        <label>
-          <span>Upload mobile hero image optional</span>
-          <input
-            type="file"
-            accept="image/*"
-            onChange={(event) =>
-              readMediaFile(event.target.files?.[0], (mobileMediaUrl) =>
-                setSettings((current) => ({ ...current, hero: { ...current.hero, mobileMediaUrl } }))
-              )
-            }
-          />
-        </label>
-        <label>
-          <span>Video poster URL optional</span>
-          <input value={settings.hero?.videoPoster || ""} onChange={(event) => setSettings((current) => ({ ...current, hero: { ...current.hero, videoPoster: event.target.value } }))} />
-        </label>
-        <button className="checkout-button" type="submit" disabled={loading}>
-          <Save />
-          Save Storefront
-        </button>
+          <label>
+            <span>Hero text</span>
+            <textarea value={settings.hero?.text || ""} onChange={(event) => setSettings((current) => ({ ...current, hero: { ...current.hero, text: event.target.value } }))} />
+          </label>
+          <div className="admin-two">
+            <label>
+              <span>Primary CTA</span>
+              <input value={settings.hero?.primaryCta || ""} onChange={(event) => setSettings((current) => ({ ...current, hero: { ...current.hero, primaryCta: event.target.value } }))} />
+            </label>
+            <label>
+              <span>Secondary CTA</span>
+              <input value={settings.hero?.secondaryCta || ""} onChange={(event) => setSettings((current) => ({ ...current, hero: { ...current.hero, secondaryCta: event.target.value } }))} />
+            </label>
+          </div>
+          <div className="admin-two">
+            <label>
+              <span>Background color</span>
+              <input value={settings.theme?.background || "#171717"} onChange={(event) => setSettings((current) => ({ ...current, theme: { ...current.theme, background: event.target.value } }))} />
+            </label>
+            <label>
+              <span>Panel color</span>
+              <input value={settings.theme?.panel || "#202020"} onChange={(event) => setSettings((current) => ({ ...current, theme: { ...current.theme, panel: event.target.value } }))} />
+            </label>
+          </div>
+          <button className="checkout-button" type="submit" disabled={loading}>
+            <Save />
+            Save Storefront
+          </button>
+        </section>
+
+        <section className="admin-card admin-form">
+          <div className="admin-card-title">
+            <Video />
+            <h2>Hero media slider</h2>
+          </div>
+          <p className="admin-help">Add multiple hero slides. Each slide can be an image or a video. Mobile image is optional; videos can use a poster image.</p>
+          <div className="admin-hero-slides">
+            {heroSlides.map((slide, index) => (
+              <article className="admin-hero-slide" key={index}>
+                <div className="admin-hero-slide-head">
+                  <strong>Slide {index + 1}</strong>
+                  <button className="icon-button admin-delete" type="button" onClick={() => removeHeroSlide(index)} aria-label={`Remove slide ${index + 1}`}>
+                    <Trash2 />
+                  </button>
+                </div>
+                <div className="admin-two">
+                  <label>
+                    <span>Type</span>
+                    <select value={slide.type || "image"} onChange={(event) => updateHeroSlide(index, { type: event.target.value })}>
+                      <option value="image">Image</option>
+                      <option value="video">Video</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Upload media up to 12MB</span>
+                    <input
+                      type="file"
+                      accept="image/*,video/mp4,video/webm,video/ogg"
+                      onChange={(event) =>
+                        readMediaFile(event.target.files?.[0], (url) =>
+                          updateHeroSlide(index, {
+                            url,
+                            type: event.target.files?.[0]?.type.startsWith("video/") ? "video" : "image"
+                          })
+                        )
+                      }
+                    />
+                  </label>
+                </div>
+                <label>
+                  <span>Image/video URL</span>
+                  <input value={slide.url || ""} onChange={(event) => updateHeroSlide(index, { url: event.target.value })} />
+                </label>
+                <label>
+                  <span>Mobile image URL optional</span>
+                  <input value={slide.mobileUrl || ""} onChange={(event) => updateHeroSlide(index, { mobileUrl: event.target.value })} />
+                </label>
+                <label>
+                  <span>Video poster URL optional</span>
+                  <input value={slide.poster || ""} onChange={(event) => updateHeroSlide(index, { poster: event.target.value })} />
+                </label>
+                {slide.url && (
+                  <div className="admin-media-preview">
+                    {slide.type === "video" ? (
+                      <video src={slide.url} poster={slide.poster || slide.mobileUrl} muted loop playsInline controls />
+                    ) : (
+                      <img src={slide.url} alt="" />
+                    )}
+                  </div>
+                )}
+              </article>
+            ))}
+          </div>
+          <button className="dash-ghost" type="button" onClick={addHeroSlide}>
+            <Plus />
+            Add slide
+          </button>
+        </section>
       </form>
     );
   }
