@@ -653,17 +653,46 @@ export default function AdminPage({ onDataChanged }) {
   function renderProducts() {
     return (
       <>
-        <section className="admin-card product-admin-list">
-          <div className="admin-section-toolbar">
-            <div className="admin-card-title">
-              <Image />
-              <h2>Product catalog</h2>
+        <section className="admin-products-page">
+          <div className="admin-products-hero">
+            <div>
+              <p className="eyebrow">Catalog Manager</p>
+              <h2>Products</h2>
+              <span>{filteredProducts.length} products in catalog, {products.filter((product) => product.featured).length} featured.</span>
             </div>
             <button className="checkout-button admin-add-button" type="button" onClick={() => openProductModal()}>
               <PackagePlus />
-              Add Product
+              Create Product
             </button>
           </div>
+
+          <div className="admin-product-summary">
+            <article>
+              <strong>{products.length}</strong>
+              <span>Total products</span>
+            </article>
+            <article>
+              <strong>{products.filter((product) => product.inventory > 0).length}</strong>
+              <span>In stock</span>
+            </article>
+            <article>
+              <strong>{products.filter((product) => product.oldPrice).length}</strong>
+              <span>On sale</span>
+            </article>
+            <article>
+              <strong>{new Set(products.map((product) => product.brand).filter(Boolean)).size}</strong>
+              <span>Brands</span>
+            </article>
+          </div>
+
+          <div className="admin-card product-admin-list">
+            <div className="admin-section-toolbar">
+              <div className="admin-card-title">
+                <Image />
+                <h2>Catalog</h2>
+              </div>
+              <span className="admin-subtle">Showing {visibleProducts.length} of {filteredProducts.length}</span>
+            </div>
           <div className="admin-product-controls">
             <label className="admin-search">
               <span>Search products</span>
@@ -733,6 +762,7 @@ export default function AdminPage({ onDataChanged }) {
               Next
               <ChevronRight />
             </button>
+          </div>
           </div>
         </section>
 
