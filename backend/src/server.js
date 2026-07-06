@@ -100,8 +100,19 @@ const adminSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+const customerSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true },
+    email: { type: String, required: true, unique: true },
+    joined: String,
+    lastSeenAt: Date
+  },
+  { timestamps: true }
+);
+
 const SiteSettings = mongoose.model("SiteSettings", siteSettingsSchema);
 const Admin = mongoose.model("Admin", adminSchema);
+const Customer = mongoose.model("Customer", customerSchema);
 
 app.use(express.json({ limit: "15mb" }));
 app.use(
@@ -420,6 +431,39 @@ app.get("/api/testimonials", (_req, res) => {
   res.json({ testimonials, count: testimonials.length });
 });
 
+app.post("/api/customers", async (req, res, next) => {
+  try {
+    if (!mongoReady) {
+      res.json({
+        customer: {
+          name: req.body.name,
+          email: req.body.email,
+          joined: req.body.joined
+        },
+        stored: false
+      });
+      return;
+    }
+
+    const name = String(req.body.name || "").trim();
+    const email = String(req.body.email || "").trim().toLowerCase();
+    const joined = String(req.body.joined || "").trim();
+    if (!name || !email) {
+      res.status(400).json({ message: "Name and email are required" });
+      return;
+    }
+
+    const customer = await Customer.findOneAndUpdate(
+      { email },
+      { $set: { name, email, joined, lastSeenAt: new Date() } },
+      { new: true, upsert: true, runValidators: true }
+    ).lean();
+    res.json({ customer, stored: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/api/products/:slug", async (req, res, next) => {
   try {
     const products = await readProducts({});
@@ -458,10 +502,62 @@ app.post("/api/admin/login", async (req, res, next) => {
   }
 });
 
+app.get("/api/admin/overview", requireAdmin, async (_req, res, next) => {
+  try {
+    const products = mongoReady ? await Product.find({}).lean() : seedProducts;
+    const customers = mongoReady ? await Customer.find({}).sort({ updatedAt: -1 }).limit(8).lean() : [];
+    const brands = new Set(products.map((product) => product.brand).filter(Boolean));
+    const categories = new Set(products.map((product) => product.category).filter(Boolean));
+    const totalInventory = products.reduce((sum, product) => sum + Number(product.inventory || 0), 0);
+    const inventoryValue = products.reduce((sum, product) => sum + Number(product.inventory || 0) * Number(product.price || 0), 0);
+    res.json({
+      stats: {
+        products: products.length,
+        customers: mongoReady ? await Customer.countDocuments() : 0,
+        brands: brands.size,
+        categories: categories.size,
+        featured: products.filter((product) => product.featured).length,
+        totalInventory,
+        inventoryValue
+      },
+      recentProducts: shapeProducts(products.slice(0, 6)),
+      recentCustomers: customers.map((customer) => ({
+        id: String(customer._id),
+        name: customer.name,
+        email: customer.email,
+        joined: customer.joined,
+        lastSeenAt: customer.lastSeenAt,
+        createdAt: customer.createdAt
+      }))
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/api/admin/products", requireAdmin, async (_req, res, next) => {
   try {
     const products = mongoReady ? await Product.find({}).sort({ updatedAt: -1 }).lean() : seedProducts;
     res.json({ products: shapeProducts(products), count: products.length });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/admin/customers", requireAdmin, async (_req, res, next) => {
+  try {
+    const customers = mongoReady ? await Customer.find({}).sort({ updatedAt: -1 }).lean() : [];
+    res.json({
+      customers: customers.map((customer) => ({
+        id: String(customer._id),
+        name: customer.name,
+        email: customer.email,
+        joined: customer.joined,
+        lastSeenAt: customer.lastSeenAt,
+        createdAt: customer.createdAt
+      })),
+      count: customers.length
+    });
   } catch (error) {
     next(error);
   }

@@ -50,7 +50,7 @@ Open the Vercel URL and confirm products load from the Render API.
 
 ## Admin
 
-Open the frontend and click `Admin` in the navbar. The default local/demo login is:
+Open `/admin` on the frontend domain. The admin portal is intentionally separate from the customer storefront and is not linked from the public navbar. The default local/demo login is:
 
 - Email: `admin@qadam.store`
 - Password: `Qadam@2026`

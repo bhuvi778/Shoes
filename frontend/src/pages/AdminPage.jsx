@@ -1,4 +1,18 @@
-import { Image, LogOut, Plus, Save, Trash2, Video } from "lucide-react";
+import {
+  BarChart3,
+  Boxes,
+  Image,
+  LayoutDashboard,
+  LogOut,
+  PackagePlus,
+  Plus,
+  Save,
+  ShoppingBag,
+  Store,
+  Trash2,
+  Users,
+  Video
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { apiPath } from "../lib/api.js";
 import { inr } from "../lib/format.js";
@@ -43,6 +57,13 @@ const defaultSettings = {
   }
 };
 
+const navItems = [
+  { id: "overview", label: "Overview", icon: LayoutDashboard },
+  { id: "storefront", label: "Storefront", icon: Store },
+  { id: "products", label: "Products", icon: ShoppingBag },
+  { id: "customers", label: "Customers", icon: Users }
+];
+
 function toFormProduct(product) {
   return {
     ...emptyProduct,
@@ -78,7 +99,10 @@ function fromFormProduct(product) {
 export default function AdminPage({ onDataChanged }) {
   const [token, setToken] = useState(() => localStorage.getItem("qadam_admin_token") || "");
   const [login, setLogin] = useState({ email: "admin@qadam.store", password: "" });
+  const [section, setSection] = useState("overview");
+  const [overview, setOverview] = useState(null);
   const [products, setProducts] = useState([]);
+  const [customers, setCustomers] = useState([]);
   const [productForm, setProductForm] = useState(emptyProduct);
   const [settings, setSettings] = useState(defaultSettings);
   const [message, setMessage] = useState("");
@@ -90,12 +114,12 @@ export default function AdminPage({ onDataChanged }) {
     if (token) loadAdminData(token);
   }, [token]);
 
-  async function adminFetch(path, options = {}) {
+  async function adminFetch(path, options = {}, nextToken = token) {
     const response = await fetch(apiPath(path), {
       ...options,
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${nextToken}`,
         ...(options.headers || {})
       }
     });
@@ -108,15 +132,17 @@ export default function AdminPage({ onDataChanged }) {
   async function loadAdminData(nextToken = token) {
     setLoading(true);
     try {
-      const headers = { Authorization: `Bearer ${nextToken}` };
-      const [productData, settingsData] = await Promise.all([
-        fetch(apiPath("/api/admin/products"), { headers }).then((response) => response.json()),
-        fetch(apiPath("/api/admin/settings"), { headers }).then((response) => response.json())
+      const [overviewData, productData, settingsData, customerData] = await Promise.all([
+        adminFetch("/api/admin/overview", {}, nextToken),
+        adminFetch("/api/admin/products", {}, nextToken),
+        adminFetch("/api/admin/settings", {}, nextToken),
+        adminFetch("/api/admin/customers", {}, nextToken)
       ]);
-      if (productData.message || settingsData.message) throw new Error(productData.message || settingsData.message);
+      setOverview(overviewData);
       setProducts(productData.products || []);
       setSettings(settingsData.settings || defaultSettings);
-      setMessage("Admin data loaded.");
+      setCustomers(customerData.customers || []);
+      setMessage("Dashboard data synced.");
     } catch (error) {
       setMessage(error.message);
       setToken("");
@@ -151,6 +177,8 @@ export default function AdminPage({ onDataChanged }) {
     localStorage.removeItem("qadam_admin_token");
     setToken("");
     setProducts([]);
+    setCustomers([]);
+    setOverview(null);
     setProductForm(emptyProduct);
   }
 
@@ -176,6 +204,7 @@ export default function AdminPage({ onDataChanged }) {
         body: JSON.stringify(settings)
       });
       setMessage("Storefront settings saved.");
+      await loadAdminData();
       onDataChanged?.();
     } catch (error) {
       setMessage(error.message);
@@ -219,134 +248,162 @@ export default function AdminPage({ onDataChanged }) {
     }
   }
 
-  if (!token) {
+  function renderOverview() {
+    const stats = overview?.stats || {};
+    const cards = [
+      { label: "Products", value: stats.products || 0, icon: ShoppingBag },
+      { label: "Customers", value: stats.customers || 0, icon: Users },
+      { label: "Brands", value: stats.brands || 0, icon: Boxes },
+      { label: "Inventory value", value: inr(stats.inventoryValue || 0), icon: BarChart3 }
+    ];
+
     return (
-      <main className="page-shell admin-page">
-        <section className="admin-login">
-          <p className="eyebrow">Admin Panel</p>
-          <h1>Manage storefront content.</h1>
-          <form className="admin-form" onSubmit={handleLogin}>
-            <label>
-              <span>Email</span>
-              <input type="email" value={login.email} onChange={(event) => setLogin((current) => ({ ...current, email: event.target.value }))} />
-            </label>
-            <label>
-              <span>Password</span>
-              <input
-                type="password"
-                value={login.password}
-                onChange={(event) => setLogin((current) => ({ ...current, password: event.target.value }))}
-              />
-            </label>
-            <button className="checkout-button" type="submit" disabled={loading}>
-              Sign In
-            </button>
-          </form>
-          {message && <p className="admin-message">{message}</p>}
+      <>
+        <section className="admin-metrics">
+          {cards.map((card) => {
+            const Icon = card.icon;
+            return (
+              <article className="admin-metric" key={card.label}>
+                <Icon />
+                <strong>{card.value}</strong>
+                <span>{card.label}</span>
+              </article>
+            );
+          })}
         </section>
-      </main>
+        <section className="admin-overview-grid">
+          <div className="admin-card">
+            <div className="admin-card-title">
+              <ShoppingBag />
+              <h2>Recent products</h2>
+            </div>
+            <div className="admin-products compact">
+              {(overview?.recentProducts || products.slice(0, 6)).map((product) => (
+                <article className="admin-product-row" key={product.id}>
+                  <img src={product.image} alt="" />
+                  <div>
+                    <strong>{product.name}</strong>
+                    <span>{product.brand} | {product.category} | {inr(product.price)}</span>
+                  </div>
+                  <button className="dash-ghost" type="button" onClick={() => { setProductForm(toFormProduct(product)); setSection("products"); }}>
+                    Edit
+                  </button>
+                </article>
+              ))}
+            </div>
+          </div>
+          <div className="admin-card">
+            <div className="admin-card-title">
+              <Users />
+              <h2>Recent customers</h2>
+            </div>
+            <div className="admin-customer-list compact">
+              {(overview?.recentCustomers || customers.slice(0, 6)).map((customer) => (
+                <article className="admin-customer-row" key={customer.id || customer.email}>
+                  <span>{(customer.name || customer.email || "?").slice(0, 1).toUpperCase()}</span>
+                  <div>
+                    <strong>{customer.name}</strong>
+                    <em>{customer.email}</em>
+                  </div>
+                </article>
+              ))}
+              {(overview?.recentCustomers || customers).length === 0 && <p className="admin-empty">No registered customers yet.</p>}
+            </div>
+          </div>
+        </section>
+      </>
     );
   }
 
-  return (
-    <main className="page-shell admin-page">
-      <section className="admin-header">
-        <div>
-          <p className="eyebrow">Admin Panel</p>
-          <h1>Storefront controls</h1>
-          <p>Hero media, theme colors, product images, brand images, and category backgrounds are editable here.</p>
+  function renderStorefront() {
+    return (
+      <form className="admin-card admin-form" onSubmit={saveSettings}>
+        <div className="admin-card-title">
+          <Video />
+          <h2>Hero, video and theme controls</h2>
         </div>
-        <button className="dash-ghost" type="button" onClick={logout}>
-          <LogOut />
-          Logout
+        <label>
+          <span>Hero eyebrow</span>
+          <input value={settings.hero?.eyebrow || ""} onChange={(event) => setSettings((current) => ({ ...current, hero: { ...current.hero, eyebrow: event.target.value } }))} />
+        </label>
+        <label>
+          <span>Hero title</span>
+          <input value={settings.hero?.title || ""} onChange={(event) => setSettings((current) => ({ ...current, hero: { ...current.hero, title: event.target.value } }))} />
+        </label>
+        <label>
+          <span>Hero text</span>
+          <textarea value={settings.hero?.text || ""} onChange={(event) => setSettings((current) => ({ ...current, hero: { ...current.hero, text: event.target.value } }))} />
+        </label>
+        <div className="admin-two">
+          <label>
+            <span>Media type</span>
+            <select value={settings.hero?.mediaType || "image"} onChange={(event) => setSettings((current) => ({ ...current, hero: { ...current.hero, mediaType: event.target.value } }))}>
+              <option value="image">Image</option>
+              <option value="video">Video</option>
+            </select>
+          </label>
+          <label>
+            <span>Background color</span>
+            <input value={settings.theme?.background || "#171717"} onChange={(event) => setSettings((current) => ({ ...current, theme: { ...current.theme, background: event.target.value } }))} />
+          </label>
+        </div>
+        <label>
+          <span>Hero image/video URL</span>
+          <input value={settings.hero?.mediaUrl || ""} onChange={(event) => setSettings((current) => ({ ...current, hero: { ...current.hero, mediaUrl: event.target.value } }))} />
+        </label>
+        <label>
+          <span>Upload hero image/video up to 12MB</span>
+          <input
+            type="file"
+            accept="image/*,video/mp4,video/webm,video/ogg"
+            onChange={(event) =>
+              readMediaFile(event.target.files?.[0], (mediaUrl) =>
+                setSettings((current) => ({
+                  ...current,
+                  hero: {
+                    ...current.hero,
+                    mediaUrl,
+                    mediaType: event.target.files?.[0]?.type.startsWith("video/") ? "video" : "image"
+                  }
+                }))
+              )
+            }
+          />
+        </label>
+        <label>
+          <span>Mobile hero image URL optional</span>
+          <input value={settings.hero?.mobileMediaUrl || ""} onChange={(event) => setSettings((current) => ({ ...current, hero: { ...current.hero, mobileMediaUrl: event.target.value } }))} />
+        </label>
+        <label>
+          <span>Upload mobile hero image optional</span>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(event) =>
+              readMediaFile(event.target.files?.[0], (mobileMediaUrl) =>
+                setSettings((current) => ({ ...current, hero: { ...current.hero, mobileMediaUrl } }))
+              )
+            }
+          />
+        </label>
+        <label>
+          <span>Video poster URL optional</span>
+          <input value={settings.hero?.videoPoster || ""} onChange={(event) => setSettings((current) => ({ ...current, hero: { ...current.hero, videoPoster: event.target.value } }))} />
+        </label>
+        <button className="checkout-button" type="submit" disabled={loading}>
+          <Save />
+          Save Storefront
         </button>
-      </section>
+      </form>
+    );
+  }
 
-      {message && <p className="admin-message">{message}</p>}
-
-      <section className="admin-grid">
-        <form className="admin-card admin-form" onSubmit={saveSettings}>
-          <div className="admin-card-title">
-            <Video />
-            <h2>Hero and theme</h2>
-          </div>
-          <label>
-            <span>Hero eyebrow</span>
-            <input value={settings.hero?.eyebrow || ""} onChange={(event) => setSettings((current) => ({ ...current, hero: { ...current.hero, eyebrow: event.target.value } }))} />
-          </label>
-          <label>
-            <span>Hero title</span>
-            <input value={settings.hero?.title || ""} onChange={(event) => setSettings((current) => ({ ...current, hero: { ...current.hero, title: event.target.value } }))} />
-          </label>
-          <label>
-            <span>Hero text</span>
-            <textarea value={settings.hero?.text || ""} onChange={(event) => setSettings((current) => ({ ...current, hero: { ...current.hero, text: event.target.value } }))} />
-          </label>
-          <div className="admin-two">
-            <label>
-              <span>Media type</span>
-              <select value={settings.hero?.mediaType || "image"} onChange={(event) => setSettings((current) => ({ ...current, hero: { ...current.hero, mediaType: event.target.value } }))}>
-                <option value="image">Image</option>
-                <option value="video">Video</option>
-              </select>
-            </label>
-            <label>
-              <span>Background color</span>
-              <input value={settings.theme?.background || "#171717"} onChange={(event) => setSettings((current) => ({ ...current, theme: { ...current.theme, background: event.target.value } }))} />
-            </label>
-          </div>
-          <label>
-            <span>Hero image/video URL</span>
-            <input value={settings.hero?.mediaUrl || ""} onChange={(event) => setSettings((current) => ({ ...current, hero: { ...current.hero, mediaUrl: event.target.value } }))} />
-          </label>
-          <label>
-            <span>Upload hero image/video up to 12MB</span>
-            <input
-              type="file"
-              accept="image/*,video/mp4,video/webm,video/ogg"
-              onChange={(event) =>
-                readMediaFile(event.target.files?.[0], (mediaUrl) =>
-                  setSettings((current) => ({
-                    ...current,
-                    hero: {
-                      ...current.hero,
-                      mediaUrl,
-                      mediaType: event.target.files?.[0]?.type.startsWith("video/") ? "video" : "image"
-                    }
-                  }))
-                )
-              }
-            />
-          </label>
-          <label>
-            <span>Mobile hero image URL optional</span>
-            <input value={settings.hero?.mobileMediaUrl || ""} onChange={(event) => setSettings((current) => ({ ...current, hero: { ...current.hero, mobileMediaUrl: event.target.value } }))} />
-          </label>
-          <label>
-            <span>Upload mobile hero image optional</span>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(event) =>
-                readMediaFile(event.target.files?.[0], (mobileMediaUrl) =>
-                  setSettings((current) => ({ ...current, hero: { ...current.hero, mobileMediaUrl } }))
-                )
-              }
-            />
-          </label>
-          <label>
-            <span>Video poster URL optional</span>
-            <input value={settings.hero?.videoPoster || ""} onChange={(event) => setSettings((current) => ({ ...current, hero: { ...current.hero, videoPoster: event.target.value } }))} />
-          </label>
-          <button className="checkout-button" type="submit" disabled={loading}>
-            <Save />
-            Save Settings
-          </button>
-        </form>
-
+  function renderProducts() {
+    return (
+      <section className="admin-product-workspace">
         <form className="admin-card admin-form" onSubmit={saveProduct}>
           <div className="admin-card-title">
-            <Image />
+            <PackagePlus />
             <h2>{selectedProduct ? "Edit product" : "Add product"}</h2>
           </div>
           <div className="admin-two">
@@ -434,30 +491,136 @@ export default function AdminPage({ onDataChanged }) {
             </button>
           </div>
         </form>
-      </section>
 
-      <section className="admin-card product-admin-list">
+        <section className="admin-card product-admin-list">
+          <div className="admin-card-title">
+            <Image />
+            <h2>Catalog</h2>
+          </div>
+          <div className="admin-products">
+            {products.map((product) => (
+              <article className="admin-product-row" key={product.id}>
+                <img src={product.image} alt="" />
+                <div>
+                  <strong>{product.name}</strong>
+                  <span>{product.brand} | {product.category} | {inr(product.price)}</span>
+                </div>
+                <button className="dash-ghost" type="button" onClick={() => setProductForm(toFormProduct(product))}>
+                  Edit
+                </button>
+                <button className="icon-button admin-delete" type="button" onClick={() => deleteProduct(product.id)} aria-label={`Delete ${product.name}`}>
+                  <Trash2 />
+                </button>
+              </article>
+            ))}
+          </div>
+        </section>
+      </section>
+    );
+  }
+
+  function renderCustomers() {
+    return (
+      <section className="admin-card">
         <div className="admin-card-title">
-          <Image />
-          <h2>Products</h2>
+          <Users />
+          <h2>Registered customers</h2>
         </div>
-        <div className="admin-products">
-          {products.map((product) => (
-            <article className="admin-product-row" key={product.id}>
-              <img src={product.image} alt="" />
+        <div className="admin-customer-table">
+          {customers.map((customer) => (
+            <article className="admin-customer-row" key={customer.id || customer.email}>
+              <span>{(customer.name || customer.email || "?").slice(0, 1).toUpperCase()}</span>
               <div>
-                <strong>{product.name}</strong>
-                <span>{product.brand} · {product.category} · {inr(product.price)}</span>
+                <strong>{customer.name}</strong>
+                <em>{customer.email}</em>
               </div>
-              <button className="dash-ghost" type="button" onClick={() => setProductForm(toFormProduct(product))}>
-                Edit
-              </button>
-              <button className="icon-button admin-delete" type="button" onClick={() => deleteProduct(product.id)} aria-label={`Delete ${product.name}`}>
-                <Trash2 />
-              </button>
+              <small>{customer.joined || "Joined date not available"}</small>
             </article>
           ))}
+          {customers.length === 0 && <p className="admin-empty">No registered customers yet. Customer sign-ins will appear here after MongoDB is connected.</p>}
         </div>
+      </section>
+    );
+  }
+
+  function renderSection() {
+    if (section === "storefront") return renderStorefront();
+    if (section === "products") return renderProducts();
+    if (section === "customers") return renderCustomers();
+    return renderOverview();
+  }
+
+  if (!token) {
+    return (
+      <main className="admin-portal auth-only">
+        <section className="admin-login">
+          <p className="eyebrow">Qadam Admin</p>
+          <h1>Sign in to manage the store.</h1>
+          <form className="admin-form" onSubmit={handleLogin}>
+            <label>
+              <span>Email</span>
+              <input type="email" value={login.email} onChange={(event) => setLogin((current) => ({ ...current, email: event.target.value }))} />
+            </label>
+            <label>
+              <span>Password</span>
+              <input
+                type="password"
+                value={login.password}
+                onChange={(event) => setLogin((current) => ({ ...current, password: event.target.value }))}
+              />
+            </label>
+            <button className="checkout-button" type="submit" disabled={loading}>
+              Sign In
+            </button>
+          </form>
+          {message && <p className="admin-message">{message}</p>}
+        </section>
+      </main>
+    );
+  }
+
+  return (
+    <main className="admin-portal">
+      <aside className="admin-sidebar">
+        <div className="admin-brand">
+          <strong>Qadam</strong>
+          <span>Commerce Control</span>
+        </div>
+        <nav aria-label="Admin navigation">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button className={section === item.id ? "is-active" : ""} type="button" key={item.id} onClick={() => setSection(item.id)}>
+                <Icon />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
+        </nav>
+        <button className="admin-logout" type="button" onClick={logout}>
+          <LogOut />
+          Logout
+        </button>
+      </aside>
+
+      <section className="admin-main">
+        <header className="admin-topbar">
+          <div>
+            <p className="eyebrow">Admin Dashboard</p>
+            <h1>{navItems.find((item) => item.id === section)?.label || "Overview"}</h1>
+          </div>
+          <div className="admin-top-actions">
+            <a className="dash-ghost" href="/" target="_blank" rel="noreferrer">
+              View storefront
+            </a>
+            <button className="dash-ghost" type="button" onClick={() => loadAdminData()}>
+              Refresh
+            </button>
+          </div>
+        </header>
+
+        {message && <p className="admin-message">{message}</p>}
+        {renderSection()}
       </section>
     </main>
   );

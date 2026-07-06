@@ -15,6 +15,7 @@ import DashboardPage from "./pages/DashboardPage.jsx";
 import AdminPage from "./pages/AdminPage.jsx";
 
 export default function App() {
+  const isAdminPortal = window.location.pathname.startsWith("/admin");
   const [page, setPage] = useState("home");
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [filters, setFilters] = useState(baseFilters);
@@ -268,9 +269,21 @@ export default function App() {
     setToast("Order placed successfully!");
   }
 
+  function goHome() {
+    if (window.location.pathname !== "/") {
+      window.history.pushState({}, "", "/");
+    }
+    setPage("home");
+  }
+
   function handleAuthSubmit({ name, email }) {
     const joined = new Date().toLocaleDateString("en-IN", { month: "long", year: "numeric" });
     const nextUser = { name, email, joined };
+    fetch(apiPath("/api/customers"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(nextUser)
+    }).catch((error) => console.error(error));
     setUser(nextUser);
     setAuthOpen(false);
     const intent = authIntent;
@@ -309,10 +322,6 @@ export default function App() {
   }
 
   function renderPage() {
-    if (page === "admin") {
-      return <AdminPage onDataChanged={reloadStorefrontData} />;
-    }
-
     if (page === "collection") {
       return (
         <CollectionPage
@@ -398,17 +407,20 @@ export default function App() {
     );
   }
 
+  if (isAdminPortal) {
+    return <AdminPage onDataChanged={reloadStorefrontData} />;
+  }
+
   return (
     <>
       <Header
         user={user}
         cartCount={cartCount}
         favoritesCount={favorites.size}
-        onHome={() => setPage("home")}
+        onHome={goHome}
         onOpenCollection={openCollection}
         onGoSection={goHomeSection}
         onShowSale={showHeaderSale}
-        onOpenAdmin={() => setPage("admin")}
         onFocusSearch={focusSearch}
         onOpenFavorites={() => setPage("favorites")}
         onOpenAccount={openAccount}
@@ -421,7 +433,7 @@ export default function App() {
 
       <Footer
         brands={brands}
-        onHome={() => setPage("home")}
+        onHome={goHome}
         onSelectCategory={selectCategory}
         onShowSale={showFooterSale}
         onSelectBrand={selectBrand}

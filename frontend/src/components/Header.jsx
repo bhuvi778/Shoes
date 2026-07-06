@@ -10,7 +10,6 @@ export default function Header({
   onOpenCollection,
   onGoSection,
   onShowSale,
-  onOpenAdmin,
   onFocusSearch,
   onOpenFavorites,
   onOpenAccount,
@@ -37,9 +36,6 @@ export default function Header({
         </button>
         <button type="button" onClick={onShowSale}>
           Sale
-        </button>
-        <button type="button" onClick={onOpenAdmin}>
-          Admin
         </button>
       </nav>
 
