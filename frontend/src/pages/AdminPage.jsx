@@ -1,17 +1,24 @@
 import {
   BarChart3,
   Boxes,
+  ChevronLeft,
+  ChevronRight,
+  Grid3X3,
   Image,
   LayoutDashboard,
+  List,
   LogOut,
+  MessageSquare,
   PackagePlus,
   Plus,
   Save,
   ShoppingBag,
+  Star,
   Store,
   Trash2,
   Users,
-  Video
+  Video,
+  X
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { apiPath } from "../lib/api.js";
@@ -39,6 +46,15 @@ const emptyProduct = {
   featured: false
 };
 
+const emptyTestimonial = {
+  id: "",
+  name: "",
+  role: "",
+  quote: "",
+  rating: 5,
+  featured: true
+};
+
 const defaultSettings = {
   hero: {
     eyebrow: "",
@@ -62,8 +78,11 @@ const navItems = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "storefront", label: "Storefront", icon: Store },
   { id: "products", label: "Products", icon: ShoppingBag },
+  { id: "reviews", label: "Reviews", icon: MessageSquare },
   { id: "customers", label: "Customers", icon: Users }
 ];
+
+const productsPerPage = 8;
 
 const emptyHeroSlide = {
   type: "image",
@@ -77,7 +96,7 @@ function toFormProduct(product) {
     ...emptyProduct,
     ...product,
     oldPrice: product.oldPrice || "",
-    sizesText: (product.sizes || []).join(", "),
+    sizesText: product.sizes?.length ? product.sizes.join(", ") : product.sizesText || emptyProduct.sizesText,
     imagesText: (product.images?.length ? product.images : [product.image]).filter(Boolean).join("\n")
   };
 }
@@ -111,16 +130,36 @@ export default function AdminPage({ onDataChanged }) {
   const [overview, setOverview] = useState(null);
   const [products, setProducts] = useState([]);
   const [customers, setCustomers] = useState([]);
+  const [testimonials, setTestimonials] = useState([]);
   const [productForm, setProductForm] = useState(emptyProduct);
+  const [testimonialForm, setTestimonialForm] = useState(emptyTestimonial);
   const [settings, setSettings] = useState(defaultSettings);
+  const [productModalOpen, setProductModalOpen] = useState(false);
+  const [productView, setProductView] = useState("card");
+  const [productPage, setProductPage] = useState(1);
+  const [productSearch, setProductSearch] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
   const selectedProduct = useMemo(() => products.find((product) => product.id === productForm.id), [productForm.id, products]);
+  const selectedTestimonial = useMemo(() => testimonials.find((item) => item.id === testimonialForm.id), [testimonialForm.id, testimonials]);
+  const filteredProducts = useMemo(() => {
+    const search = productSearch.trim().toLowerCase();
+    if (!search) return products;
+    return products.filter((product) =>
+      `${product.name} ${product.brand} ${product.category} ${product.color} ${product.badge || ""}`.toLowerCase().includes(search)
+    );
+  }, [productSearch, products]);
+  const productPageCount = Math.max(1, Math.ceil(filteredProducts.length / productsPerPage));
+  const visibleProducts = filteredProducts.slice((productPage - 1) * productsPerPage, productPage * productsPerPage);
 
   useEffect(() => {
     if (token) loadAdminData(token);
   }, [token]);
+
+  useEffect(() => {
+    setProductPage(1);
+  }, [productSearch, products.length]);
 
   async function adminFetch(path, options = {}, nextToken = token) {
     const response = await fetch(apiPath(path), {
@@ -140,16 +179,18 @@ export default function AdminPage({ onDataChanged }) {
   async function loadAdminData(nextToken = token) {
     setLoading(true);
     try {
-      const [overviewData, productData, settingsData, customerData] = await Promise.all([
+      const [overviewData, productData, settingsData, customerData, testimonialData] = await Promise.all([
         adminFetch("/api/admin/overview", {}, nextToken),
         adminFetch("/api/admin/products", {}, nextToken),
         adminFetch("/api/admin/settings", {}, nextToken),
-        adminFetch("/api/admin/customers", {}, nextToken)
+        adminFetch("/api/admin/customers", {}, nextToken),
+        adminFetch("/api/admin/testimonials", {}, nextToken)
       ]);
       setOverview(overviewData);
       setProducts(productData.products || []);
       setSettings(settingsData.settings || defaultSettings);
       setCustomers(customerData.customers || []);
+      setTestimonials(testimonialData.testimonials || []);
       setMessage("Dashboard data synced.");
     } catch (error) {
       setMessage(error.message);
@@ -186,8 +227,11 @@ export default function AdminPage({ onDataChanged }) {
     setToken("");
     setProducts([]);
     setCustomers([]);
+    setTestimonials([]);
     setOverview(null);
     setProductForm(emptyProduct);
+    setTestimonialForm(emptyTestimonial);
+    setProductModalOpen(false);
   }
 
   function readMediaFile(file, onReady) {
@@ -201,6 +245,37 @@ export default function AdminPage({ onDataChanged }) {
     reader.onload = () => onReady(String(reader.result || ""));
     reader.onerror = () => setMessage("Could not read selected media file.");
     reader.readAsDataURL(file);
+  }
+
+  function readMediaFiles(files, onReady) {
+    const fileList = Array.from(files || []);
+    if (!fileList.length) return;
+    const allowedFiles = fileList.filter((file) => {
+      if (file.size <= 12 * 1024 * 1024) return true;
+      setMessage("Some files were skipped. Use hosted URLs for videos larger than 12MB.");
+      return false;
+    });
+    if (!allowedFiles.length) return;
+
+    Promise.all(
+      allowedFiles.map(
+        (file) =>
+          new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () =>
+              resolve({
+                type: file.type.startsWith("video/") ? "video" : "image",
+                url: String(reader.result || ""),
+                mobileUrl: "",
+                poster: ""
+              });
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          })
+      )
+    )
+      .then(onReady)
+      .catch(() => setMessage("Could not read selected media files."));
   }
 
   function getHeroSlides() {
@@ -239,6 +314,22 @@ export default function AdminPage({ onDataChanged }) {
       hero: {
         ...current.hero,
         mediaItems: slides
+      }
+    }));
+  }
+
+  function addHeroSlides(slidesToAdd) {
+    const existingSlides = getHeroSlides().filter((slide) => slide.url);
+    const slides = [...existingSlides, ...slidesToAdd];
+    setSettings((current) => ({
+      ...current,
+      hero: {
+        ...current.hero,
+        mediaType: slides[0]?.type || "image",
+        mediaUrl: slides[0]?.url || "",
+        mobileMediaUrl: slides[0]?.mobileUrl || "",
+        videoPoster: slides[0]?.poster || "",
+        mediaItems: slides.length ? slides : [{ ...emptyHeroSlide }]
       }
     }));
   }
@@ -287,6 +378,7 @@ export default function AdminPage({ onDataChanged }) {
       await adminFetch(path, { method, body: JSON.stringify(payload) });
       setMessage(productForm.id ? "Product updated." : "Product created.");
       setProductForm(emptyProduct);
+      setProductModalOpen(false);
       await loadAdminData();
       onDataChanged?.();
     } catch (error) {
@@ -312,12 +404,58 @@ export default function AdminPage({ onDataChanged }) {
     }
   }
 
+  function openProductModal(product = emptyProduct) {
+    setProductForm(toFormProduct(product));
+    setProductModalOpen(true);
+  }
+
+  async function saveTestimonial(event) {
+    event.preventDefault();
+    setLoading(true);
+    try {
+      const path = testimonialForm.id ? `/api/admin/testimonials/${testimonialForm.id}` : "/api/admin/testimonials";
+      const method = testimonialForm.id ? "PUT" : "POST";
+      await adminFetch(path, {
+        method,
+        body: JSON.stringify({
+          ...testimonialForm,
+          rating: Number(testimonialForm.rating)
+        })
+      });
+      setMessage(testimonialForm.id ? "Review updated." : "Review created.");
+      setTestimonialForm(emptyTestimonial);
+      await loadAdminData();
+      onDataChanged?.();
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function deleteTestimonial(id) {
+    if (!window.confirm("Delete this review?")) return;
+    setLoading(true);
+    try {
+      await adminFetch(`/api/admin/testimonials/${id}`, { method: "DELETE" });
+      setMessage("Review deleted.");
+      setTestimonialForm(emptyTestimonial);
+      await loadAdminData();
+      onDataChanged?.();
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function renderOverview() {
     const stats = overview?.stats || {};
     const cards = [
       { label: "Products", value: stats.products || 0, icon: ShoppingBag },
       { label: "Customers", value: stats.customers || 0, icon: Users },
       { label: "Brands", value: stats.brands || 0, icon: Boxes },
+      { label: "Reviews", value: stats.testimonials || testimonials.length || 0, icon: MessageSquare },
       { label: "Inventory value", value: inr(stats.inventoryValue || 0), icon: BarChart3 }
     ];
 
@@ -349,7 +487,7 @@ export default function AdminPage({ onDataChanged }) {
                     <strong>{product.name}</strong>
                     <span>{product.brand} | {product.category} | {inr(product.price)}</span>
                   </div>
-                  <button className="dash-ghost" type="button" onClick={() => { setProductForm(toFormProduct(product)); setSection("products"); }}>
+                  <button className="dash-ghost" type="button" onClick={() => { setSection("products"); openProductModal(product); }}>
                     Edit
                   </button>
                 </article>
@@ -432,7 +570,20 @@ export default function AdminPage({ onDataChanged }) {
             <Video />
             <h2>Hero media slider</h2>
           </div>
-          <p className="admin-help">Add multiple hero slides. Each slide can be an image or a video. Mobile image is optional; videos can use a poster image.</p>
+          <p className="admin-help">Select multiple images or videos to create a running hero slider. You can also add hosted video URLs for larger files.</p>
+          <label className="admin-bulk-upload">
+            <Plus />
+            <span>Upload multiple hero slides</span>
+            <input
+              type="file"
+              multiple
+              accept="image/*,video/mp4,video/webm,video/ogg"
+              onChange={(event) => {
+                readMediaFiles(event.target.files, addHeroSlides);
+                event.target.value = "";
+              }}
+            />
+          </label>
           <div className="admin-hero-slides">
             {heroSlides.map((slide, index) => (
               <article className="admin-hero-slide" key={index}>
@@ -501,119 +652,290 @@ export default function AdminPage({ onDataChanged }) {
 
   function renderProducts() {
     return (
-      <section className="admin-product-workspace">
-        <form className="admin-card admin-form" onSubmit={saveProduct}>
+      <>
+        <section className="admin-card product-admin-list">
+          <div className="admin-section-toolbar">
+            <div className="admin-card-title">
+              <Image />
+              <h2>Product catalog</h2>
+            </div>
+            <button className="checkout-button admin-add-button" type="button" onClick={() => openProductModal()}>
+              <PackagePlus />
+              Add Product
+            </button>
+          </div>
+          <div className="admin-product-controls">
+            <label className="admin-search">
+              <span>Search products</span>
+              <input value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="Name, brand, category..." />
+            </label>
+            <div className="admin-view-toggle" aria-label="Product view mode">
+              <button className={productView === "card" ? "is-active" : ""} type="button" onClick={() => setProductView("card")}>
+                <Grid3X3 />
+                Card
+              </button>
+              <button className={productView === "list" ? "is-active" : ""} type="button" onClick={() => setProductView("list")}>
+                <List />
+                List
+              </button>
+            </div>
+          </div>
+          {productView === "card" ? (
+            <div className="admin-product-card-grid">
+              {visibleProducts.map((product) => (
+                <article className="admin-product-card" key={product.id}>
+                  <div className="admin-product-card-media">
+                    <img src={product.image} alt="" />
+                  </div>
+                  <div className="admin-product-card-body">
+                    <span>{product.brand} | {product.category}</span>
+                    <strong>{product.name}</strong>
+                    <small>{inr(product.price)} | Stock {product.inventory}</small>
+                  </div>
+                  <div className="admin-product-card-actions">
+                    <button className="dash-ghost" type="button" onClick={() => openProductModal(product)}>
+                      Edit
+                    </button>
+                    <button className="icon-button admin-delete" type="button" onClick={() => deleteProduct(product.id)} aria-label={`Delete ${product.name}`}>
+                      <Trash2 />
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="admin-products">
+              {visibleProducts.map((product) => (
+                <article className="admin-product-row" key={product.id}>
+                  <img src={product.image} alt="" />
+                  <div>
+                    <strong>{product.name}</strong>
+                    <span>{product.brand} | {product.category} | {inr(product.price)} | Stock {product.inventory}</span>
+                  </div>
+                  <button className="dash-ghost" type="button" onClick={() => openProductModal(product)}>
+                    Edit
+                  </button>
+                  <button className="icon-button admin-delete" type="button" onClick={() => deleteProduct(product.id)} aria-label={`Delete ${product.name}`}>
+                    <Trash2 />
+                  </button>
+                </article>
+              ))}
+            </div>
+          )}
+          {visibleProducts.length === 0 && <p className="admin-empty">No products found.</p>}
+          <div className="admin-pagination">
+            <button type="button" disabled={productPage <= 1} onClick={() => setProductPage((page) => Math.max(1, page - 1))}>
+              <ChevronLeft />
+              Prev
+            </button>
+            <span>Page {productPage} of {productPageCount} | {filteredProducts.length} products</span>
+            <button type="button" disabled={productPage >= productPageCount} onClick={() => setProductPage((page) => Math.min(productPageCount, page + 1))}>
+              Next
+              <ChevronRight />
+            </button>
+          </div>
+        </section>
+
+        {productModalOpen && (
+          <div className="admin-modal-layer" role="dialog" aria-modal="true" aria-label={selectedProduct ? "Edit product" : "Add product"}>
+            <button className="admin-modal-scrim" type="button" onClick={() => setProductModalOpen(false)} aria-label="Close product form" />
+            <form className="admin-card admin-form admin-modal" onSubmit={saveProduct}>
+              <div className="admin-modal-head">
+                <div className="admin-card-title">
+                  <PackagePlus />
+                  <h2>{selectedProduct ? "Edit product" : "Add product"}</h2>
+                </div>
+                <button className="icon-button" type="button" onClick={() => setProductModalOpen(false)} aria-label="Close">
+                  <X />
+                </button>
+              </div>
+              <div className="admin-two">
+                <label>
+                  <span>Name</span>
+                  <input value={productForm.name} onChange={(event) => setProductForm((current) => ({ ...current, name: event.target.value }))} />
+                </label>
+                <label>
+                  <span>Slug</span>
+                  <input value={productForm.slug} onChange={(event) => setProductForm((current) => ({ ...current, slug: event.target.value }))} />
+                </label>
+              </div>
+              <div className="admin-two">
+                <label>
+                  <span>Brand</span>
+                  <input value={productForm.brand} onChange={(event) => setProductForm((current) => ({ ...current, brand: event.target.value }))} />
+                </label>
+                <label>
+                  <span>Category</span>
+                  <input value={productForm.category} onChange={(event) => setProductForm((current) => ({ ...current, category: event.target.value }))} />
+                </label>
+              </div>
+              <div className="admin-three">
+                <label>
+                  <span>Price</span>
+                  <input type="number" value={productForm.price} onChange={(event) => setProductForm((current) => ({ ...current, price: event.target.value }))} />
+                </label>
+                <label>
+                  <span>Old price</span>
+                  <input type="number" value={productForm.oldPrice} onChange={(event) => setProductForm((current) => ({ ...current, oldPrice: event.target.value }))} />
+                </label>
+                <label>
+                  <span>Inventory</span>
+                  <input type="number" value={productForm.inventory} onChange={(event) => setProductForm((current) => ({ ...current, inventory: event.target.value }))} />
+                </label>
+              </div>
+              <div className="admin-three">
+                <label>
+                  <span>Color</span>
+                  <input value={productForm.color} onChange={(event) => setProductForm((current) => ({ ...current, color: event.target.value }))} />
+                </label>
+                <label>
+                  <span>Badge</span>
+                  <input value={productForm.badge} onChange={(event) => setProductForm((current) => ({ ...current, badge: event.target.value }))} />
+                </label>
+                <label className="admin-check">
+                  <input type="checkbox" checked={productForm.featured} onChange={(event) => setProductForm((current) => ({ ...current, featured: event.target.checked }))} />
+                  <span>Featured</span>
+                </label>
+              </div>
+              <label>
+                <span>Main product image URL</span>
+                <input value={productForm.image} onChange={(event) => setProductForm((current) => ({ ...current, image: event.target.value }))} />
+              </label>
+              <label>
+                <span>Upload main product image</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(event) =>
+                    readMediaFile(event.target.files?.[0], (image) => setProductForm((current) => ({ ...current, image })))
+                  }
+                />
+              </label>
+              <label>
+                <span>Gallery image URLs one per line</span>
+                <textarea value={productForm.imagesText} onChange={(event) => setProductForm((current) => ({ ...current, imagesText: event.target.value }))} />
+              </label>
+              <label>
+                <span>Upload multiple gallery images</span>
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  onChange={(event) =>
+                    readMediaFiles(event.target.files, (images) =>
+                      setProductForm((current) => ({
+                        ...current,
+                        imagesText: [current.imagesText, ...images.map((image) => image.url)].filter(Boolean).join("\n")
+                      }))
+                    )
+                  }
+                />
+              </label>
+              <div className="admin-two">
+                <label>
+                  <span>Brand card image URL</span>
+                  <input value={productForm.brandImage} onChange={(event) => setProductForm((current) => ({ ...current, brandImage: event.target.value }))} />
+                </label>
+                <label>
+                  <span>Category card image URL</span>
+                  <input value={productForm.categoryImage} onChange={(event) => setProductForm((current) => ({ ...current, categoryImage: event.target.value }))} />
+                </label>
+              </div>
+              <label>
+                <span>Sizes comma separated</span>
+                <input value={productForm.sizesText} onChange={(event) => setProductForm((current) => ({ ...current, sizesText: event.target.value }))} />
+              </label>
+              <label>
+                <span>Description</span>
+                <textarea value={productForm.description} onChange={(event) => setProductForm((current) => ({ ...current, description: event.target.value }))} />
+              </label>
+              <div className="admin-actions">
+                <button className="checkout-button" type="submit" disabled={loading}>
+                  <Save />
+                  Save Product
+                </button>
+                <button className="dash-ghost" type="button" onClick={() => setProductForm(emptyProduct)}>
+                  <Plus />
+                  Reset
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+      </>
+    );
+  }
+
+  function renderReviews() {
+    return (
+      <section className="admin-review-workspace">
+        <form className="admin-card admin-form" onSubmit={saveTestimonial}>
           <div className="admin-card-title">
-            <PackagePlus />
-            <h2>{selectedProduct ? "Edit product" : "Add product"}</h2>
+            <MessageSquare />
+            <h2>{selectedTestimonial ? "Edit review" : "Add review"}</h2>
           </div>
           <div className="admin-two">
             <label>
-              <span>Name</span>
-              <input value={productForm.name} onChange={(event) => setProductForm((current) => ({ ...current, name: event.target.value }))} />
+              <span>Customer name</span>
+              <input value={testimonialForm.name} onChange={(event) => setTestimonialForm((current) => ({ ...current, name: event.target.value }))} />
             </label>
             <label>
-              <span>Slug</span>
-              <input value={productForm.slug} onChange={(event) => setProductForm((current) => ({ ...current, slug: event.target.value }))} />
+              <span>Role / label</span>
+              <input value={testimonialForm.role} onChange={(event) => setTestimonialForm((current) => ({ ...current, role: event.target.value }))} />
             </label>
           </div>
+          <label>
+            <span>Review text</span>
+            <textarea value={testimonialForm.quote} onChange={(event) => setTestimonialForm((current) => ({ ...current, quote: event.target.value }))} />
+          </label>
           <div className="admin-two">
             <label>
-              <span>Brand</span>
-              <input value={productForm.brand} onChange={(event) => setProductForm((current) => ({ ...current, brand: event.target.value }))} />
-            </label>
-            <label>
-              <span>Category</span>
-              <input value={productForm.category} onChange={(event) => setProductForm((current) => ({ ...current, category: event.target.value }))} />
-            </label>
-          </div>
-          <div className="admin-three">
-            <label>
-              <span>Price</span>
-              <input type="number" value={productForm.price} onChange={(event) => setProductForm((current) => ({ ...current, price: event.target.value }))} />
-            </label>
-            <label>
-              <span>Old price</span>
-              <input type="number" value={productForm.oldPrice} onChange={(event) => setProductForm((current) => ({ ...current, oldPrice: event.target.value }))} />
-            </label>
-            <label>
-              <span>Inventory</span>
-              <input type="number" value={productForm.inventory} onChange={(event) => setProductForm((current) => ({ ...current, inventory: event.target.value }))} />
-            </label>
-          </div>
-          <div className="admin-three">
-            <label>
-              <span>Color</span>
-              <input value={productForm.color} onChange={(event) => setProductForm((current) => ({ ...current, color: event.target.value }))} />
-            </label>
-            <label>
-              <span>Badge</span>
-              <input value={productForm.badge} onChange={(event) => setProductForm((current) => ({ ...current, badge: event.target.value }))} />
+              <span>Rating</span>
+              <select value={testimonialForm.rating} onChange={(event) => setTestimonialForm((current) => ({ ...current, rating: Number(event.target.value) }))}>
+                {[5, 4, 3, 2, 1].map((rating) => (
+                  <option value={rating} key={rating}>{rating} stars</option>
+                ))}
+              </select>
             </label>
             <label className="admin-check">
-              <input type="checkbox" checked={productForm.featured} onChange={(event) => setProductForm((current) => ({ ...current, featured: event.target.checked }))} />
-              <span>Featured</span>
+              <input type="checkbox" checked={testimonialForm.featured} onChange={(event) => setTestimonialForm((current) => ({ ...current, featured: event.target.checked }))} />
+              <span>Show on homepage</span>
             </label>
           </div>
-          <label>
-            <span>Main product image URL</span>
-            <input value={productForm.image} onChange={(event) => setProductForm((current) => ({ ...current, image: event.target.value }))} />
-          </label>
-          <label>
-            <span>Gallery image URLs one per line</span>
-            <textarea value={productForm.imagesText} onChange={(event) => setProductForm((current) => ({ ...current, imagesText: event.target.value }))} />
-          </label>
-          <div className="admin-two">
-            <label>
-              <span>Brand card image URL</span>
-              <input value={productForm.brandImage} onChange={(event) => setProductForm((current) => ({ ...current, brandImage: event.target.value }))} />
-            </label>
-            <label>
-              <span>Category card image URL</span>
-              <input value={productForm.categoryImage} onChange={(event) => setProductForm((current) => ({ ...current, categoryImage: event.target.value }))} />
-            </label>
-          </div>
-          <label>
-            <span>Sizes comma separated</span>
-            <input value={productForm.sizesText} onChange={(event) => setProductForm((current) => ({ ...current, sizesText: event.target.value }))} />
-          </label>
-          <label>
-            <span>Description</span>
-            <textarea value={productForm.description} onChange={(event) => setProductForm((current) => ({ ...current, description: event.target.value }))} />
-          </label>
           <div className="admin-actions">
             <button className="checkout-button" type="submit" disabled={loading}>
               <Save />
-              Save Product
+              Save Review
             </button>
-            <button className="dash-ghost" type="button" onClick={() => setProductForm(emptyProduct)}>
+            <button className="dash-ghost" type="button" onClick={() => setTestimonialForm(emptyTestimonial)}>
               <Plus />
               New
             </button>
           </div>
         </form>
 
-        <section className="admin-card product-admin-list">
+        <section className="admin-card">
           <div className="admin-card-title">
-            <Image />
-            <h2>Catalog</h2>
+            <Star />
+            <h2>Homepage testimonials</h2>
           </div>
-          <div className="admin-products">
-            {products.map((product) => (
-              <article className="admin-product-row" key={product.id}>
-                <img src={product.image} alt="" />
+          <div className="admin-review-list">
+            {testimonials.map((item) => (
+              <article className="admin-review-row" key={item.id || item.name}>
                 <div>
-                  <strong>{product.name}</strong>
-                  <span>{product.brand} | {product.category} | {inr(product.price)}</span>
+                  <strong>{item.name}</strong>
+                  <span>{item.role || "Customer"} | {item.rating} stars | {item.featured ? "Visible" : "Hidden"}</span>
+                  <p>{item.quote}</p>
                 </div>
-                <button className="dash-ghost" type="button" onClick={() => setProductForm(toFormProduct(product))}>
+                <button className="dash-ghost" type="button" onClick={() => setTestimonialForm({ ...emptyTestimonial, ...item })}>
                   Edit
                 </button>
-                <button className="icon-button admin-delete" type="button" onClick={() => deleteProduct(product.id)} aria-label={`Delete ${product.name}`}>
+                <button className="icon-button admin-delete" type="button" onClick={() => deleteTestimonial(item.id)} aria-label={`Delete review by ${item.name}`}>
                   <Trash2 />
                 </button>
               </article>
             ))}
+            {testimonials.length === 0 && <p className="admin-empty">No reviews yet.</p>}
           </div>
         </section>
       </section>
@@ -647,6 +969,7 @@ export default function AdminPage({ onDataChanged }) {
   function renderSection() {
     if (section === "storefront") return renderStorefront();
     if (section === "products") return renderProducts();
+    if (section === "reviews") return renderReviews();
     if (section === "customers") return renderCustomers();
     return renderOverview();
   }

@@ -3,7 +3,7 @@ import crypto from "crypto";
 import dotenv from "dotenv";
 import express from "express";
 import mongoose from "mongoose";
-import { seedProducts, testimonials } from "./products.js";
+import { seedProducts, testimonials as seedTestimonials } from "./products.js";
 
 dotenv.config();
 
@@ -126,9 +126,21 @@ const customerSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+const testimonialSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true },
+    role: { type: String, default: "" },
+    quote: { type: String, required: true },
+    rating: { type: Number, default: 5, min: 1, max: 5 },
+    featured: { type: Boolean, default: true }
+  },
+  { timestamps: true }
+);
+
 const SiteSettings = mongoose.model("SiteSettings", siteSettingsSchema);
 const Admin = mongoose.model("Admin", adminSchema);
 const Customer = mongoose.model("Customer", customerSchema);
+const Testimonial = mongoose.model("Testimonial", testimonialSchema);
 
 app.use(express.json({ limit: "15mb" }));
 app.use(
@@ -291,6 +303,22 @@ function sanitizeSettings(body) {
   };
 }
 
+function sanitizeTestimonial(body) {
+  return {
+    name: String(body.name || "").trim(),
+    role: String(body.role || "").trim(),
+    quote: String(body.quote || "").trim(),
+    rating: Math.min(5, Math.max(1, toNumber(body.rating, 5))),
+    featured: body.featured !== false
+  };
+}
+
+function validateTestimonial(testimonial) {
+  const missing = ["name", "quote"].filter((key) => !testimonial[key]);
+  if (missing.length > 0) return `Missing required review fields: ${missing.join(", ")}`;
+  return "";
+}
+
 app.get("/", (_req, res) => {
   res.json({
     ok: true,
@@ -327,6 +355,20 @@ function shapeProducts(products) {
   });
 }
 
+function shapeTestimonials(items) {
+  return items.map((item) => {
+    const testimonial = item.toObject ? item.toObject() : item;
+    return {
+      id: String(testimonial._id || testimonial.name),
+      name: testimonial.name,
+      role: testimonial.role,
+      quote: testimonial.quote,
+      rating: testimonial.rating || 5,
+      featured: testimonial.featured !== false
+    };
+  });
+}
+
 function applyFilters(products, query) {
   const category = query.category;
   const brand = query.brand;
@@ -356,6 +398,12 @@ function applyFilters(products, query) {
   return result;
 }
 
+async function readTestimonials() {
+  if (!mongoReady) return shapeTestimonials(seedTestimonials);
+  const items = await Testimonial.find({ featured: { $ne: false } }).sort({ updatedAt: -1 }).lean();
+  return shapeTestimonials(items);
+}
+
 async function readProducts(query) {
   if (!mongoReady) {
     return applyFilters(shapeProducts(seedProducts), query);
@@ -381,6 +429,10 @@ async function connectMongo() {
   }
 
   await SiteSettings.updateOne({ key: "main" }, { $setOnInsert: defaultSiteSettings }, { upsert: true });
+  const testimonialCount = await Testimonial.countDocuments();
+  if (testimonialCount === 0) {
+    await Testimonial.insertMany(seedTestimonials);
+  }
   await ensureDefaultAdmin();
   console.log("MongoDB connected.");
 }
@@ -467,8 +519,13 @@ app.get("/api/brands", async (req, res, next) => {
   }
 });
 
-app.get("/api/testimonials", (_req, res) => {
-  res.json({ testimonials, count: testimonials.length });
+app.get("/api/testimonials", async (_req, res, next) => {
+  try {
+    const testimonials = await readTestimonials();
+    res.json({ testimonials, count: testimonials.length });
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.post("/api/customers", async (req, res, next) => {
@@ -558,6 +615,7 @@ app.get("/api/admin/overview", requireAdmin, async (_req, res, next) => {
   try {
     const products = mongoReady ? await Product.find({}).lean() : seedProducts;
     const customers = mongoReady ? await Customer.find({}).sort({ updatedAt: -1 }).limit(8).lean() : [];
+    const testimonialItems = mongoReady ? await Testimonial.find({}).sort({ updatedAt: -1 }).limit(6).lean() : seedTestimonials;
     const brands = new Set(products.map((product) => product.brand).filter(Boolean));
     const categories = new Set(products.map((product) => product.category).filter(Boolean));
     const totalInventory = products.reduce((sum, product) => sum + Number(product.inventory || 0), 0);
@@ -569,10 +627,12 @@ app.get("/api/admin/overview", requireAdmin, async (_req, res, next) => {
         brands: brands.size,
         categories: categories.size,
         featured: products.filter((product) => product.featured).length,
+        testimonials: mongoReady ? await Testimonial.countDocuments() : seedTestimonials.length,
         totalInventory,
         inventoryValue
       },
       recentProducts: shapeProducts(products.slice(0, 6)),
+      recentTestimonials: shapeTestimonials(testimonialItems.slice(0, 6)),
       recentCustomers: customers.map((customer) => ({
         id: String(customer._id),
         name: customer.name,
@@ -582,6 +642,15 @@ app.get("/api/admin/overview", requireAdmin, async (_req, res, next) => {
         createdAt: customer.createdAt
       }))
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/admin/testimonials", requireAdmin, async (_req, res, next) => {
+  try {
+    const testimonials = mongoReady ? await Testimonial.find({}).sort({ updatedAt: -1 }).lean() : seedTestimonials;
+    res.json({ testimonials: shapeTestimonials(testimonials), count: testimonials.length });
   } catch (error) {
     next(error);
   }
@@ -666,6 +735,65 @@ app.delete("/api/admin/products/:id", requireAdmin, async (req, res, next) => {
     const deleted = await Product.findByIdAndDelete(req.params.id);
     if (!deleted) {
       res.status(404).json({ message: "Product not found" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/admin/testimonials", requireAdmin, async (req, res, next) => {
+  try {
+    if (!mongoReady) {
+      res.status(503).json({ message: "MongoDB is required for admin review updates" });
+      return;
+    }
+    const testimonial = sanitizeTestimonial(req.body);
+    const message = validateTestimonial(testimonial);
+    if (message) {
+      res.status(400).json({ message });
+      return;
+    }
+    const created = await Testimonial.create(testimonial);
+    res.status(201).json({ testimonial: shapeTestimonials([created])[0] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.put("/api/admin/testimonials/:id", requireAdmin, async (req, res, next) => {
+  try {
+    if (!mongoReady) {
+      res.status(503).json({ message: "MongoDB is required for admin review updates" });
+      return;
+    }
+    const testimonial = sanitizeTestimonial(req.body);
+    const message = validateTestimonial(testimonial);
+    if (message) {
+      res.status(400).json({ message });
+      return;
+    }
+    const updated = await Testimonial.findByIdAndUpdate(req.params.id, testimonial, { new: true, runValidators: true });
+    if (!updated) {
+      res.status(404).json({ message: "Review not found" });
+      return;
+    }
+    res.json({ testimonial: shapeTestimonials([updated])[0] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/admin/testimonials/:id", requireAdmin, async (req, res, next) => {
+  try {
+    if (!mongoReady) {
+      res.status(503).json({ message: "MongoDB is required for admin review updates" });
+      return;
+    }
+    const deleted = await Testimonial.findByIdAndDelete(req.params.id);
+    if (!deleted) {
+      res.status(404).json({ message: "Review not found" });
       return;
     }
     res.json({ ok: true });

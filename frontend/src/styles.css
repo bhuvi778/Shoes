@@ -3380,6 +3380,35 @@ button {
   line-height: 1.55;
 }
 
+.admin-bulk-upload {
+  position: relative;
+  min-height: 58px;
+  display: flex !important;
+  grid-template-columns: none !important;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px dashed rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--text);
+  cursor: pointer;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.admin-bulk-upload svg {
+  width: 18px;
+  height: 18px;
+}
+
+.admin-bulk-upload input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
 .admin-hero-slides {
   display: grid;
   gap: 14px;
@@ -3428,6 +3457,157 @@ button {
   gap: 16px;
 }
 
+.admin-section-toolbar,
+.admin-product-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.admin-section-toolbar .admin-card-title {
+  margin-bottom: 0;
+}
+
+.admin-add-button {
+  width: auto;
+  min-width: 170px;
+  gap: 9px;
+}
+
+.admin-add-button svg {
+  width: 17px;
+  height: 17px;
+}
+
+.admin-search {
+  display: grid;
+  gap: 8px;
+  width: min(440px, 100%);
+}
+
+.admin-search span {
+  color: var(--muted-strong);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.admin-search input {
+  min-height: 44px;
+  border: 1px solid var(--line-strong);
+  background: #121312;
+  color: var(--text);
+  outline: 0;
+  padding: 0 13px;
+}
+
+.admin-view-toggle,
+.admin-pagination {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-view-toggle button,
+.admin-pagination button {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  background: #141514;
+  color: var(--muted-strong);
+  padding: 0 13px;
+  font-weight: 800;
+}
+
+.admin-view-toggle button.is-active,
+.admin-pagination button:not(:disabled):hover {
+  border-color: rgba(255, 255, 255, 0.34);
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--text);
+}
+
+.admin-pagination button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.admin-view-toggle svg,
+.admin-pagination svg {
+  width: 17px;
+  height: 17px;
+}
+
+.admin-product-card-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.admin-product-card {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  border: 1px solid var(--line);
+  background: #151615;
+}
+
+.admin-product-card-media {
+  aspect-ratio: 1 / 0.78;
+  display: grid;
+  place-items: center;
+  background: #20221f;
+  border-bottom: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.admin-product-card-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 10%;
+}
+
+.admin-product-card-body {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+}
+
+.admin-product-card-body span,
+.admin-product-card-body small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.admin-product-card-body strong {
+  min-height: 42px;
+  line-height: 1.25;
+}
+
+.admin-product-card-actions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  padding: 0 14px 14px;
+}
+
+.admin-pagination {
+  justify-content: center;
+  padding-top: 6px;
+}
+
+.admin-pagination span {
+  color: var(--muted-strong);
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .admin-products {
   display: grid;
   gap: 10px;
@@ -3465,6 +3645,81 @@ button {
 .admin-delete {
   border: 1px solid var(--line);
   color: #ff9a9a;
+}
+
+.admin-modal-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.admin-modal-scrim {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(8px);
+}
+
+.admin-modal {
+  position: relative;
+  z-index: 1;
+  width: min(820px, 100%);
+  max-height: min(88vh, 920px);
+  overflow-y: auto;
+}
+
+.admin-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.admin-modal-head .admin-card-title {
+  margin-bottom: 0;
+}
+
+.admin-review-workspace {
+  display: grid;
+  grid-template-columns: minmax(360px, 0.78fr) minmax(0, 1.22fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.admin-review-list {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-review-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: start;
+  padding: 15px;
+  border: 1px solid var(--line);
+  background: #151615;
+}
+
+.admin-review-row strong,
+.admin-review-row span {
+  display: block;
+}
+
+.admin-review-row span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.admin-review-row p {
+  margin: 12px 0 0;
+  color: var(--muted-strong);
+  line-height: 1.55;
 }
 
 @media (max-width: 1080px) {
@@ -3615,7 +3870,7 @@ button {
 
 .admin-metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 14px;
 }
 
@@ -3726,8 +3981,13 @@ button {
 
   .admin-overview-grid,
   .admin-product-workspace,
-  .admin-storefront-grid {
+  .admin-storefront-grid,
+  .admin-review-workspace {
     grid-template-columns: 1fr;
+  }
+
+  .admin-product-card-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -3770,6 +4030,27 @@ button {
     grid-template-columns: 1fr;
   }
 
+  .admin-section-toolbar,
+  .admin-product-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-add-button,
+  .admin-search {
+    width: 100%;
+  }
+
+  .admin-view-toggle {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .admin-product-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .admin-media-preview {
     aspect-ratio: 4 / 3;
   }
@@ -3800,6 +4081,28 @@ button {
   .admin-product-row,
   .admin-products.compact .admin-product-row {
     grid-template-columns: 52px minmax(0, 1fr);
+  }
+
+  .admin-product-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-pagination {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .admin-modal-layer {
+    padding: 10px;
+  }
+
+  .admin-modal {
+    max-height: 94vh;
+  }
+
+  .admin-review-row {
+    grid-template-columns: 1fr;
   }
 
   .admin-product-row .dash-ghost,
