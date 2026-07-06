@@ -14,6 +14,12 @@ import FavoritesPage from "./pages/FavoritesPage.jsx";
 import DashboardPage from "./pages/DashboardPage.jsx";
 import AdminPage from "./pages/AdminPage.jsx";
 
+const adminPortalEmail = (import.meta.env.VITE_ADMIN_EMAIL || "admin@qadam.store").toLowerCase();
+
+function isAdminEmail(email) {
+  return String(email || "").trim().toLowerCase() === adminPortalEmail;
+}
+
 export default function App() {
   const isAdminPortal = window.location.pathname.startsWith("/admin");
   const [page, setPage] = useState("home");
@@ -123,6 +129,14 @@ export default function App() {
     if (user) localStorage.setItem("stryd_user", JSON.stringify(user));
     else localStorage.removeItem("stryd_user");
   }, [user]);
+
+  useEffect(() => {
+    if (!isAdminPortal && isAdminEmail(user?.email)) {
+      localStorage.removeItem("stryd_user");
+      setUser(null);
+      window.location.assign("/admin");
+    }
+  }, [isAdminPortal, user]);
 
   useEffect(() => {
     localStorage.setItem("stryd_orders", JSON.stringify(orders));
@@ -276,7 +290,21 @@ export default function App() {
     setPage("home");
   }
 
+  function openAdminPortal() {
+    localStorage.removeItem("stryd_user");
+    setUser(null);
+    window.location.assign("/admin");
+  }
+
   function handleAuthSubmit({ name, email }) {
+    if (isAdminEmail(email)) {
+      setAuthOpen(false);
+      setAuthIntent(null);
+      setToast("Admin login opens in the admin portal.");
+      window.setTimeout(openAdminPortal, 150);
+      return;
+    }
+
     const joined = new Date().toLocaleDateString("en-IN", { month: "long", year: "numeric" });
     const nextUser = { name, email, joined };
     fetch(apiPath("/api/customers"), {
@@ -313,6 +341,11 @@ export default function App() {
   }
 
   function openAccount() {
+    if (isAdminEmail(user?.email)) {
+      openAdminPortal();
+      return;
+    }
+
     if (user) {
       setDashSection("overview");
       setPage("dashboard");
