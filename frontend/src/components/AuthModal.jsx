@@ -1,5 +1,6 @@
 import { Lock, Mail, User, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import BrandLogo from "./BrandLogo.jsx";
 import { BRAND_NAME } from "../lib/constants.js";
 
 export default function AuthModal({ open, mode, intent, onClose, onSubmit, onSwitchMode }) {
@@ -40,7 +41,7 @@ export default function AuthModal({ open, mode, intent, onClose, onSubmit, onSwi
           <X />
         </button>
         <div className="auth-head">
-          <span className="auth-mark">{BRAND_NAME}</span>
+          <BrandLogo className="auth-logo" labelled />
           <p className="eyebrow">{mode === "register" ? "Join the club" : "Welcome back"}</p>
           <h2>{mode === "register" ? "Create your account" : "Sign in to continue"}</h2>
           {intent === "checkout" && <p className="auth-note">Sign in to complete your checkout securely.</p>}

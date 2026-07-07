@@ -10,9 +10,10 @@ import {
   Truck
 } from "lucide-react";
 
-// Brand + store-wide configuration. Centralized here so the upcoming admin
-// portal can drive these values (and later replace them with API data).
-export const BRAND_NAME = "Qadam";
+// Brand + store-wide configuration. Centralized here so the admin portal can
+// later drive these values from API data.
+export const BRAND_NAME = "ASCEND";
+export const BRAND_LOGO = "/ascend-logo.png";
 
 export const categories = ["All", "Running", "Casual", "Boots", "Sport"];
 
@@ -46,7 +47,7 @@ export const editorials = [
   {
     eyebrow: "Brand story",
     title: "Built for shoppers who compare by purpose, not only by price.",
-    text: "Qadam organizes performance runners, everyday sneakers, boots, and premium leather shoes into a cleaner buying journey. The home page surfaces brand edits first, then lets shoppers filter deeper when they are ready.",
+    text: "ASCEND organizes performance runners, everyday sneakers, boots, and premium leather shoes into a cleaner buying journey. The home page surfaces brand edits first, then lets shoppers filter deeper when they are ready.",
     image: "https://images.unsplash.com/photo-1556906781-9a412961c28c?auto=format&fit=crop&w=1200&q=86"
   },
   {

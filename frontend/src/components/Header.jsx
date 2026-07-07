@@ -1,4 +1,5 @@
 import { Heart, Search, ShoppingBag, User } from "lucide-react";
+import BrandLogo from "./BrandLogo.jsx";
 import { BRAND_NAME } from "../lib/constants.js";
 import { getInitials } from "../lib/format.js";
 
@@ -18,7 +19,7 @@ export default function Header({
   return (
     <header className="site-header">
       <button className="brand brand-button" type="button" onClick={onHome} aria-label={`${BRAND_NAME} home`}>
-        {BRAND_NAME}
+        <BrandLogo className="header-logo" />
       </button>
 
       <nav className="main-nav" aria-label="Primary navigation">

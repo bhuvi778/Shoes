@@ -26,6 +26,7 @@ import {
   X
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import BrandLogo from "../components/BrandLogo.jsx";
 import { apiPath } from "../lib/api.js";
 import { inr } from "../lib/format.js";
 
@@ -1542,7 +1543,8 @@ export default function AdminPage({ onDataChanged }) {
     return (
       <main className="admin-portal auth-only">
         <section className="admin-login">
-          <p className="eyebrow">Qadam Admin</p>
+          <BrandLogo className="admin-login-logo" labelled />
+          <p className="eyebrow">Admin</p>
           <h1>Sign in to manage the store.</h1>
           <form className="admin-form" onSubmit={handleLogin}>
             <label>
@@ -1571,7 +1573,7 @@ export default function AdminPage({ onDataChanged }) {
     <main className="admin-portal">
       <aside className="admin-sidebar">
         <div className="admin-brand">
-          <strong>Qadam</strong>
+          <BrandLogo className="admin-sidebar-logo" labelled />
           <span>Commerce Control</span>
         </div>
         <nav aria-label="Admin navigation">

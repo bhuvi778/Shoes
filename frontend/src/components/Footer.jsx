@@ -1,3 +1,4 @@
+import BrandLogo from "./BrandLogo.jsx";
 import { BRAND_NAME, categories as defaultCategories } from "../lib/constants.js";
 
 export default function Footer({ brands, categories, onHome, onSelectCategory, onShowSale, onSelectBrand }) {
@@ -7,7 +8,7 @@ export default function Footer({ brands, categories, onHome, onSelectCategory, o
     <footer className="site-footer">
       <div className="footer-brand">
         <button className="brand brand-button" type="button" onClick={onHome} aria-label={`${BRAND_NAME} home`}>
-          {BRAND_NAME}
+          <BrandLogo className="footer-logo" />
         </button>
         <p>Premium footwear marketplace for runners, collectors, commuters, and everyday movers.</p>
       </div>
