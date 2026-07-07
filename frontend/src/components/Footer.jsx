@@ -1,3 +1,4 @@
+import { Facebook, Instagram, Linkedin, Mail, MapPin, Phone, Youtube } from "lucide-react";
 import BrandLogo from "./BrandLogo.jsx";
 import { BRAND_NAME, categories as defaultCategories } from "../lib/constants.js";
 
@@ -13,6 +14,19 @@ const companyLinks = [
   { label: "Reviews", slug: "reviews" },
   { label: "Careers", slug: "careers" },
   { label: "Sustainability", slug: "sustainability" }
+];
+
+const contactDetails = [
+  { label: "Call", value: "8178750717", href: "tel:8178750717", icon: Phone },
+  { label: "Email", value: "support@ascend.store", href: "mailto:support@ascend.store", icon: Mail },
+  { label: "Address", value: "ASCEND Footwear, Delhi NCR, India", icon: MapPin }
+];
+
+const socialLinks = [
+  { label: "Instagram", href: "https://www.instagram.com/ascend.store", icon: Instagram },
+  { label: "Facebook", href: "https://www.facebook.com/ascend.store", icon: Facebook },
+  { label: "YouTube", href: "https://www.youtube.com/@ascendstore", icon: Youtube },
+  { label: "LinkedIn", href: "https://www.linkedin.com/company/ascend-store", icon: Linkedin }
 ];
 
 export default function Footer({ brands, categories, onHome, onSelectCategory, onShowSale, onSelectBrand, onOpenInfo }) {
@@ -64,6 +78,46 @@ export default function Footer({ brands, categories, onHome, onSelectCategory, o
             {item.label}
           </button>
         ))}
+      </div>
+
+      <div className="footer-contact">
+        <h3>Contact</h3>
+        <div className="footer-contact-list">
+          {contactDetails.map((item) => {
+            const Icon = item.icon;
+            const content = (
+              <>
+                <Icon />
+                <span>{item.value}</span>
+              </>
+            );
+
+            return item.href ? (
+              <a href={item.href} key={item.label}>
+                {content}
+              </a>
+            ) : (
+              <span key={item.label}>
+                {content}
+              </span>
+            );
+          })}
+          <span>
+            <Mail />
+            <span>Mon-Sat, 10 AM - 7 PM</span>
+          </span>
+        </div>
+
+        <div className="footer-socials" aria-label="ASCEND social media links">
+          {socialLinks.map((item) => {
+            const Icon = item.icon;
+            return (
+              <a href={item.href} target="_blank" rel="noreferrer" aria-label={item.label} key={item.label}>
+                <Icon />
+              </a>
+            );
+          })}
+        </div>
       </div>
 
       <div className="footer-bottom">
