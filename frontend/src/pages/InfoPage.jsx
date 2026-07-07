@@ -1,15 +1,21 @@
 import {
   ArrowLeft,
   BriefcaseBusiness,
+  Facebook,
+  Instagram,
   Leaf,
+  Linkedin,
   Mail,
+  MapPin,
   MessageSquare,
   PackageCheck,
+  Phone,
   RotateCcw,
   Ruler,
   Star,
   Truck,
-  Users
+  Users,
+  Youtube
 } from "lucide-react";
 import { BRAND_NAME, FREE_SHIPPING_THRESHOLD } from "../lib/constants.js";
 import { inr } from "../lib/format.js";
@@ -122,6 +128,18 @@ const pageContent = {
       { label: "Focus", value: "Footwear" },
       { label: "Checkout", value: "Razorpay" },
       { label: "Returns", value: "30 days" }
+    ],
+    details: [
+      { label: "Phone", value: "8178750717", href: "tel:8178750717", icon: Phone },
+      { label: "Email", value: "support@ascend.store", href: "mailto:support@ascend.store", icon: Mail },
+      { label: "Address", value: "ASCEND Footwear, Delhi NCR, India", icon: MapPin },
+      { label: "Hours", value: "Monday to Saturday, 10 AM - 7 PM", icon: PackageCheck }
+    ],
+    socials: [
+      { label: "Instagram", href: "https://www.instagram.com/ascend.store", icon: Instagram },
+      { label: "Facebook", href: "https://www.facebook.com/ascend.store", icon: Facebook },
+      { label: "YouTube", href: "https://www.youtube.com/@ascendstore", icon: Youtube },
+      { label: "LinkedIn", href: "https://www.linkedin.com/company/ascend-store", icon: Linkedin }
     ]
   },
   reviews: {
@@ -231,6 +249,51 @@ export default function InfoPage({ slug, testimonials = [], onBack, onOpenCollec
           </article>
         ))}
       </section>
+
+      {page.details?.length > 0 && (
+        <section className="info-panel info-contact-details">
+          <div className="info-panel-head">
+            <h2>Contact details</h2>
+            <p>Use these details for order help, partnerships, and support follow-ups.</p>
+          </div>
+          <div className="info-detail-grid">
+            {page.details.map((detail) => {
+              const DetailIcon = detail.icon || PackageCheck;
+              const content = (
+                <>
+                  <DetailIcon />
+                  <div>
+                    <span>{detail.label}</span>
+                    <strong>{detail.value}</strong>
+                  </div>
+                </>
+              );
+
+              return detail.href ? (
+                <a className="info-detail-card" href={detail.href} key={detail.label}>
+                  {content}
+                </a>
+              ) : (
+                <div className="info-detail-card" key={detail.label}>
+                  {content}
+                </div>
+              );
+            })}
+          </div>
+          {page.socials?.length > 0 && (
+            <div className="info-socials" aria-label="ASCEND social media">
+              {page.socials.map((social) => {
+                const SocialIcon = social.icon;
+                return (
+                  <a href={social.href} target="_blank" rel="noreferrer" aria-label={social.label} key={social.label}>
+                    <SocialIcon />
+                  </a>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
 
       {page.reviewsPage && (
         <section className="info-panel info-reviews">

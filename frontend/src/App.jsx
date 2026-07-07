@@ -168,8 +168,8 @@ export default function App() {
   }, [query]);
 
   useEffect(() => {
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }, [page, selectedProduct?.id]);
+    window.scrollTo({ top: 0, behavior: page === "info" ? "auto" : "smooth" });
+  }, [page, selectedProduct?.id, infoSlug]);
 
   useEffect(() => {
     if (user) localStorage.setItem("stryd_user", JSON.stringify(user));
@@ -301,6 +301,7 @@ export default function App() {
     setInfoSlug(slug);
     setPage("info");
     setCartOpen(false);
+    window.setTimeout(() => window.scrollTo(0, 0), 0);
   }
 
   function openAuth(mode = "login", intent = null) {
