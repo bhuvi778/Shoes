@@ -138,6 +138,16 @@ const categorySchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+const brandSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true, unique: true },
+    image: String,
+    description: String,
+    active: { type: Boolean, default: true }
+  },
+  { timestamps: true }
+);
+
 const testimonialSchema = new mongoose.Schema(
   {
     name: { type: String, required: true },
@@ -201,6 +211,7 @@ const SiteSettings = mongoose.model("SiteSettings", siteSettingsSchema);
 const Admin = mongoose.model("Admin", adminSchema);
 const Customer = mongoose.model("Customer", customerSchema);
 const Category = mongoose.model("Category", categorySchema);
+const Brand = mongoose.model("Brand", brandSchema);
 const Testimonial = mongoose.model("Testimonial", testimonialSchema);
 const Order = mongoose.model("Order", orderSchema);
 const Coupon = mongoose.model("Coupon", couponSchema);
@@ -407,8 +418,22 @@ function sanitizeCategory(body) {
   };
 }
 
+function sanitizeBrand(body) {
+  return {
+    name: String(body.name || "").trim(),
+    image: String(body.image || "").trim(),
+    description: String(body.description || "").trim(),
+    active: body.active !== false
+  };
+}
+
 function validateCategory(category) {
   if (!category.name) return "Category name is required";
+  return "";
+}
+
+function validateBrand(brand) {
+  if (!brand.name) return "Brand name is required";
   return "";
 }
 
@@ -492,6 +517,24 @@ function shapeCategories(categories, products = []) {
       description: item.description || "",
       active: item.active !== false,
       count: categoryProducts.length,
+      fromPrice: prices.length ? Math.min(...prices) : 0
+    };
+  });
+}
+
+function shapeBrands(brands, products = []) {
+  return brands.map((brand) => {
+    const item = brand.toObject ? brand.toObject() : brand;
+    const brandProducts = products.filter((product) => product.brand === item.name);
+    const heroProduct = brandProducts.find((product) => product.brandImage) || brandProducts.find((product) => product.featured) || brandProducts[0];
+    const prices = brandProducts.map((product) => Number(product.price || 0)).filter(Boolean);
+    return {
+      id: String(item._id || item.name),
+      name: item.name,
+      image: item.image || heroProduct?.brandImage || heroProduct?.image || "",
+      description: item.description || "",
+      active: item.active !== false,
+      count: brandProducts.length,
       fromPrice: prices.length ? Math.min(...prices) : 0
     };
   });
@@ -599,6 +642,15 @@ async function readCategories(products = []) {
   return shapeCategories(categories, products);
 }
 
+async function readBrands(products = []) {
+  if (!mongoReady) {
+    const names = [...new Set(products.map((product) => product.brand).filter(Boolean))].sort();
+    return shapeBrands(names.map((name) => ({ name, active: true })), products);
+  }
+  const brands = await Brand.find({ active: { $ne: false } }).sort({ name: 1 }).lean();
+  return shapeBrands(brands, products);
+}
+
 async function connectMongo() {
   if (!process.env.MONGODB_URI) {
     console.log("MONGODB_URI not set. Using seeded in-memory product data for local development.");
@@ -626,6 +678,20 @@ async function connectMongo() {
       };
     });
     if (categorySeeds.length) await Category.insertMany(categorySeeds);
+  }
+
+  const existingBrandCount = await Brand.countDocuments();
+  if (existingBrandCount === 0) {
+    const products = await Product.find({}).lean();
+    const brandSeeds = [...new Set(products.map((product) => product.brand).filter(Boolean))].map((name) => {
+      const brandProduct = products.find((product) => product.brand === name && product.brandImage) || products.find((product) => product.brand === name);
+      return {
+        name,
+        image: brandProduct?.brandImage || brandProduct?.image || "",
+        active: true
+      };
+    });
+    if (brandSeeds.length) await Brand.insertMany(brandSeeds);
   }
 
   await SiteSettings.updateOne({ key: "main" }, { $setOnInsert: defaultSiteSettings }, { upsert: true });
@@ -704,16 +770,7 @@ app.get("/api/categories", async (req, res, next) => {
 app.get("/api/brands", async (req, res, next) => {
   try {
     const products = await readProducts({});
-    const brands = [...new Set(products.map((product) => product.brand))].sort().map((brand) => {
-      const brandProducts = products.filter((product) => product.brand === brand);
-      const heroProduct = brandProducts.find((product) => product.brandImage) || brandProducts.find((product) => product.featured) || brandProducts[0];
-      return {
-        name: brand,
-        count: brandProducts.length,
-        image: heroProduct?.brandImage || heroProduct?.image,
-        fromPrice: Math.min(...brandProducts.map((product) => product.price))
-      };
-    });
+    const brands = await readBrands(products);
     res.json({ brands, count: brands.length });
   } catch (error) {
     next(error);
@@ -863,7 +920,7 @@ app.get("/api/admin/overview", requireAdmin, async (_req, res, next) => {
     const testimonialItems = mongoReady ? await Testimonial.find({}).sort({ updatedAt: -1 }).limit(6).lean() : seedTestimonials;
     const orderItems = mongoReady ? await Order.find({}).sort({ updatedAt: -1 }).limit(6).lean() : [];
     const activeSince = new Date(Date.now() - 15 * 60 * 1000);
-    const brands = new Set(products.map((product) => product.brand).filter(Boolean));
+    const brands = mongoReady ? await Brand.countDocuments({ active: { $ne: false } }) : new Set(products.map((product) => product.brand).filter(Boolean)).size;
     const categories = mongoReady ? await Category.countDocuments({ active: { $ne: false } }) : new Set(products.map((product) => product.category).filter(Boolean)).size;
     const totalInventory = products.reduce((sum, product) => sum + Number(product.inventory || 0), 0);
     const inventoryValue = products.reduce((sum, product) => sum + Number(product.inventory || 0) * Number(product.price || 0), 0);
@@ -876,7 +933,7 @@ app.get("/api/admin/overview", requireAdmin, async (_req, res, next) => {
         coupons: mongoReady ? await Coupon.countDocuments() : 0,
         visitors: mongoReady ? await Visitor.countDocuments() : 0,
         activeVisitors: mongoReady ? await Visitor.countDocuments({ lastSeenAt: { $gte: activeSince } }) : 0,
-        brands: brands.size,
+        brands,
         categories,
         featured: products.filter((product) => product.featured).length,
         testimonials: mongoReady ? await Testimonial.countDocuments() : seedTestimonials.length,
@@ -994,6 +1051,87 @@ app.delete("/api/admin/categories/:id", requireAdmin, async (req, res, next) => 
       return;
     }
     await Product.updateMany({ category: deleted.name }, { $set: { category: "Uncategorized" } });
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/admin/brands", requireAdmin, async (_req, res, next) => {
+  try {
+    const products = mongoReady ? shapeProducts(await Product.find({}).lean()) : shapeProducts(seedProducts);
+    if (!mongoReady) {
+      const brands = await readBrands(products);
+      res.json({ brands, count: brands.length });
+      return;
+    }
+    const brands = await Brand.find({}).sort({ name: 1 }).lean();
+    res.json({ brands: shapeBrands(brands, products), count: brands.length });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/admin/brands", requireAdmin, async (req, res, next) => {
+  try {
+    if (!mongoReady) {
+      res.status(503).json({ message: "MongoDB is required for admin brand updates" });
+      return;
+    }
+    const brand = sanitizeBrand(req.body);
+    const message = validateBrand(brand);
+    if (message) {
+      res.status(400).json({ message });
+      return;
+    }
+    const created = await Brand.create(brand);
+    const products = shapeProducts(await Product.find({}).lean());
+    res.status(201).json({ brand: shapeBrands([created], products)[0] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.put("/api/admin/brands/:id", requireAdmin, async (req, res, next) => {
+  try {
+    if (!mongoReady) {
+      res.status(503).json({ message: "MongoDB is required for admin brand updates" });
+      return;
+    }
+    const brand = sanitizeBrand(req.body);
+    const message = validateBrand(brand);
+    if (message) {
+      res.status(400).json({ message });
+      return;
+    }
+    const previous = await Brand.findById(req.params.id).lean();
+    const updated = await Brand.findByIdAndUpdate(req.params.id, brand, { new: true, runValidators: true });
+    if (!updated) {
+      res.status(404).json({ message: "Brand not found" });
+      return;
+    }
+    if (previous?.name && previous.name !== updated.name) {
+      await Product.updateMany({ brand: previous.name }, { $set: { brand: updated.name } });
+    }
+    const products = shapeProducts(await Product.find({}).lean());
+    res.json({ brand: shapeBrands([updated], products)[0] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/admin/brands/:id", requireAdmin, async (req, res, next) => {
+  try {
+    if (!mongoReady) {
+      res.status(503).json({ message: "MongoDB is required for admin brand updates" });
+      return;
+    }
+    const deleted = await Brand.findByIdAndDelete(req.params.id);
+    if (!deleted) {
+      res.status(404).json({ message: "Brand not found" });
+      return;
+    }
+    await Product.updateMany({ brand: deleted.name }, { $set: { brand: "Unbranded" } });
     res.json({ ok: true });
   } catch (error) {
     next(error);

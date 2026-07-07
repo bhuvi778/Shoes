@@ -120,7 +120,7 @@ export default function HomePage({
       <section className="brand-section" id="categories">
         <div className="section-kicker">
           <p className="eyebrow">Shop by category</p>
-          <h2>Category images are controlled from product admin fields.</h2>
+          <h2>Find the right build for every run, commute, and weekend plan.</h2>
         </div>
         <div className="brand-grid">
           {(categories || []).map((category) => (
@@ -144,7 +144,7 @@ export default function HomePage({
       <section className="brand-section" id="brands">
         <div className="section-kicker">
           <p className="eyebrow">Shop by brand</p>
-          <h2>Pick your lane before you pick your pair.</h2>
+          <h2>Choose the label that fits your stride.</h2>
         </div>
         <div className="brand-grid">
           <button className="brand-card is-active" type="button" onClick={onOpenCollection}>

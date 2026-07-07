@@ -80,6 +80,14 @@ const emptyCategory = {
   active: true
 };
 
+const emptyBrand = {
+  id: "",
+  name: "",
+  image: "",
+  description: "",
+  active: true
+};
+
 const defaultSettings = {
   hero: {
     eyebrow: "",
@@ -103,6 +111,7 @@ const navItems = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "storefront", label: "Storefront", icon: Store },
   { id: "products", label: "Products", icon: ShoppingBag },
+  { id: "brands", label: "Brands", icon: Tag },
   { id: "categories", label: "Categories", icon: Boxes },
   { id: "orders", label: "Orders", icon: ClipboardList },
   { id: "coupons", label: "Coupons", icon: Tag },
@@ -178,6 +187,7 @@ export default function AdminPage({ onDataChanged }) {
   const [section, setSection] = useState("overview");
   const [overview, setOverview] = useState(null);
   const [products, setProducts] = useState([]);
+  const [brands, setBrands] = useState([]);
   const [categories, setCategories] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [testimonials, setTestimonials] = useState([]);
@@ -189,6 +199,7 @@ export default function AdminPage({ onDataChanged }) {
   const [testimonialForm, setTestimonialForm] = useState(emptyTestimonial);
   const [couponForm, setCouponForm] = useState(emptyCoupon);
   const [categoryForm, setCategoryForm] = useState(emptyCategory);
+  const [brandForm, setBrandForm] = useState(emptyBrand);
   const [settings, setSettings] = useState(defaultSettings);
   const [productModalOpen, setProductModalOpen] = useState(false);
   const [productView, setProductView] = useState("card");
@@ -201,6 +212,7 @@ export default function AdminPage({ onDataChanged }) {
   const selectedTestimonial = useMemo(() => testimonials.find((item) => item.id === testimonialForm.id), [testimonialForm.id, testimonials]);
   const selectedCoupon = useMemo(() => coupons.find((coupon) => coupon.id === couponForm.id), [couponForm.id, coupons]);
   const selectedCategory = useMemo(() => categories.find((category) => category.id === categoryForm.id), [categoryForm.id, categories]);
+  const selectedBrand = useMemo(() => brands.find((brand) => brand.id === brandForm.id), [brandForm.id, brands]);
   const filteredProducts = useMemo(() => {
     const search = productSearch.trim().toLowerCase();
     if (!search) return products;
@@ -237,7 +249,7 @@ export default function AdminPage({ onDataChanged }) {
   async function loadAdminData(nextToken = token) {
     setLoading(true);
     try {
-      const [overviewData, productData, settingsData, customerData, testimonialData, orderData, couponData, visitorData, categoryData] = await Promise.all([
+      const [overviewData, productData, settingsData, customerData, testimonialData, orderData, couponData, visitorData, categoryData, brandData] = await Promise.all([
         adminFetch("/api/admin/overview", {}, nextToken),
         adminFetch("/api/admin/products", {}, nextToken),
         adminFetch("/api/admin/settings", {}, nextToken),
@@ -246,11 +258,13 @@ export default function AdminPage({ onDataChanged }) {
         adminFetch("/api/admin/orders", {}, nextToken),
         adminFetch("/api/admin/coupons", {}, nextToken),
         adminFetch("/api/admin/visitors", {}, nextToken),
-        adminFetch("/api/admin/categories", {}, nextToken)
+        adminFetch("/api/admin/categories", {}, nextToken),
+        adminFetch("/api/admin/brands", {}, nextToken)
       ]);
       setOverview(overviewData);
       setProducts(productData.products || []);
       setCategories(categoryData.categories || []);
+      setBrands(brandData.brands || []);
       setSettings(settingsData.settings || defaultSettings);
       setCustomers(customerData.customers || []);
       setTestimonials(testimonialData.testimonials || []);
@@ -293,6 +307,7 @@ export default function AdminPage({ onDataChanged }) {
     localStorage.removeItem("qadam_admin_token");
     setToken("");
     setProducts([]);
+    setBrands([]);
     setCategories([]);
     setCustomers([]);
     setTestimonials([]);
@@ -305,6 +320,7 @@ export default function AdminPage({ onDataChanged }) {
     setTestimonialForm(emptyTestimonial);
     setCouponForm(emptyCoupon);
     setCategoryForm(emptyCategory);
+    setBrandForm(emptyBrand);
     setProductModalOpen(false);
   }
 
@@ -479,7 +495,13 @@ export default function AdminPage({ onDataChanged }) {
   }
 
   function openProductModal(product = emptyProduct) {
-    const nextProduct = product.id ? product : { ...emptyProduct, category: categories.find((category) => category.active)?.name || "" };
+    const nextProduct = product.id
+      ? product
+      : {
+          ...emptyProduct,
+          brand: brands.find((brand) => brand.active)?.name || "",
+          category: categories.find((category) => category.active)?.name || ""
+        };
     setProductForm(toFormProduct(nextProduct));
     setProductModalOpen(true);
   }
@@ -605,6 +627,41 @@ export default function AdminPage({ onDataChanged }) {
     }
   }
 
+  async function saveBrand(event) {
+    event.preventDefault();
+    setLoading(true);
+    try {
+      const path = brandForm.id ? `/api/admin/brands/${brandForm.id}` : "/api/admin/brands";
+      const method = brandForm.id ? "PUT" : "POST";
+      await adminFetch(path, { method, body: JSON.stringify(brandForm) });
+      setMessage(brandForm.id ? "Brand updated." : "Brand created.");
+      setBrandForm(emptyBrand);
+      await loadAdminData();
+      onDataChanged?.();
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function deleteBrand(brand) {
+    const confirmed = window.confirm(`Delete brand "${brand.name}"? Products under this brand will move to Unbranded.`);
+    if (!confirmed) return;
+    setLoading(true);
+    try {
+      await adminFetch(`/api/admin/brands/${brand.id}`, { method: "DELETE" });
+      setMessage("Brand deleted. Matching products moved to Unbranded.");
+      setBrandForm(emptyBrand);
+      await loadAdminData();
+      onDataChanged?.();
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function renderOverview() {
     const stats = overview?.stats || {};
     const cards = [
@@ -613,6 +670,7 @@ export default function AdminPage({ onDataChanged }) {
       { label: "Customers", value: stats.customers || 0, icon: Users },
       { label: "Active visitors", value: stats.activeVisitors || visitorStats.active || 0, icon: Activity },
       { label: "Coupons", value: stats.coupons || coupons.length || 0, icon: Tag },
+      { label: "Brands", value: stats.brands || brands.length || 0, icon: Store },
       { label: "Reviews", value: stats.testimonials || testimonials.length || 0, icon: MessageSquare },
       { label: "Revenue", value: inr(stats.revenue || 0), icon: BarChart3 },
       { label: "Categories", value: stats.categories || categories.length || 0, icon: Boxes }
@@ -953,7 +1011,14 @@ export default function AdminPage({ onDataChanged }) {
               <div className="admin-two">
                 <label>
                   <span>Brand</span>
-                  <input value={productForm.brand} onChange={(event) => setProductForm((current) => ({ ...current, brand: event.target.value }))} />
+                  <select value={productForm.brand} onChange={(event) => setProductForm((current) => ({ ...current, brand: event.target.value }))}>
+                    <option value={productForm.brand}>{productForm.brand || "Select brand"}</option>
+                    {brands
+                      .filter((brand) => brand.active && brand.name !== productForm.brand)
+                      .map((brand) => (
+                        <option value={brand.name} key={brand.id || brand.name}>{brand.name}</option>
+                      ))}
+                  </select>
                 </label>
                 <label>
                   <span>Category</span>
@@ -1217,6 +1282,83 @@ export default function AdminPage({ onDataChanged }) {
     );
   }
 
+  function renderBrands() {
+    return (
+      <section className="admin-review-workspace">
+        <form className="admin-card admin-form" onSubmit={saveBrand}>
+          <div className="admin-card-title">
+            <Tag />
+            <h2>{selectedBrand ? "Edit brand" : "Create brand"}</h2>
+          </div>
+          <label>
+            <span>Brand name</span>
+            <input value={brandForm.name} onChange={(event) => setBrandForm((current) => ({ ...current, name: event.target.value }))} placeholder="Nike" />
+          </label>
+          <label>
+            <span>Brand background image URL</span>
+            <input value={brandForm.image} onChange={(event) => setBrandForm((current) => ({ ...current, image: event.target.value }))} placeholder="https://..." />
+          </label>
+          <label>
+            <span>Upload brand background image</span>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(event) =>
+                readMediaFile(event.target.files?.[0], (image) => setBrandForm((current) => ({ ...current, image })))
+              }
+            />
+          </label>
+          <label>
+            <span>Description optional</span>
+            <textarea value={brandForm.description} onChange={(event) => setBrandForm((current) => ({ ...current, description: event.target.value }))} />
+          </label>
+          <label className="admin-check">
+            <input type="checkbox" checked={brandForm.active} onChange={(event) => setBrandForm((current) => ({ ...current, active: event.target.checked }))} />
+            <span>Show on storefront</span>
+          </label>
+          <div className="admin-actions">
+            <button className="checkout-button" type="submit" disabled={loading}>
+              <Save />
+              Save Brand
+            </button>
+            <button className="dash-ghost" type="button" onClick={() => setBrandForm(emptyBrand)}>
+              <Plus />
+              New
+            </button>
+          </div>
+        </form>
+
+        <section className="admin-card">
+          <div className="admin-card-title">
+            <Image />
+            <h2>Brands</h2>
+          </div>
+          <div className="admin-review-list">
+            {brands.map((brand) => (
+              <article className="admin-category-row" key={brand.id || brand.name}>
+                <div className="admin-category-thumb">
+                  {brand.image ? <img src={brand.image} alt="" /> : <Tag />}
+                </div>
+                <div>
+                  <strong>{brand.name}</strong>
+                  <span>{brand.count || 0} products | {brand.active ? "Visible" : "Hidden"}</span>
+                  {brand.description && <p>{brand.description}</p>}
+                </div>
+                <button className="dash-ghost" type="button" onClick={() => setBrandForm({ ...emptyBrand, ...brand })}>
+                  Edit
+                </button>
+                <button className="icon-button admin-delete" type="button" onClick={() => deleteBrand(brand)} aria-label={`Delete ${brand.name}`}>
+                  <Trash2 />
+                </button>
+              </article>
+            ))}
+            {brands.length === 0 && <p className="admin-empty">No brands yet.</p>}
+          </div>
+        </section>
+      </section>
+    );
+  }
+
   function renderOrders() {
     return (
       <section className="admin-card">
@@ -1386,6 +1528,7 @@ export default function AdminPage({ onDataChanged }) {
   function renderSection() {
     if (section === "storefront") return renderStorefront();
     if (section === "products") return renderProducts();
+    if (section === "brands") return renderBrands();
     if (section === "categories") return renderCategories();
     if (section === "orders") return renderOrders();
     if (section === "coupons") return renderCoupons();
