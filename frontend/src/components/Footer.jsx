@@ -1,7 +1,21 @@
 import BrandLogo from "./BrandLogo.jsx";
 import { BRAND_NAME, categories as defaultCategories } from "../lib/constants.js";
 
-export default function Footer({ brands, categories, onHome, onSelectCategory, onShowSale, onSelectBrand }) {
+const supportLinks = [
+  { label: "Size Guide", slug: "size-guide" },
+  { label: "Returns", slug: "returns" },
+  { label: "Shipping", slug: "shipping" },
+  { label: "Contact", slug: "contact" }
+];
+
+const companyLinks = [
+  { label: "About", slug: "about" },
+  { label: "Reviews", slug: "reviews" },
+  { label: "Careers", slug: "careers" },
+  { label: "Sustainability", slug: "sustainability" }
+];
+
+export default function Footer({ brands, categories, onHome, onSelectCategory, onShowSale, onSelectBrand, onOpenInfo }) {
   const footerCategories = categories?.length ? categories.map((category) => category.name) : defaultCategories.slice(1);
 
   return (
@@ -36,18 +50,20 @@ export default function Footer({ brands, categories, onHome, onSelectCategory, o
 
       <div className="footer-column">
         <h3>Support</h3>
-        <button type="button">Size Guide</button>
-        <button type="button">Returns</button>
-        <button type="button">Shipping</button>
-        <button type="button">Contact</button>
+        {supportLinks.map((item) => (
+          <button type="button" key={item.slug} onClick={() => onOpenInfo(item.slug)}>
+            {item.label}
+          </button>
+        ))}
       </div>
 
       <div className="footer-column">
         <h3>Company</h3>
-        <button type="button">About</button>
-        <button type="button">Reviews</button>
-        <button type="button">Careers</button>
-        <button type="button">Sustainability</button>
+        {companyLinks.map((item) => (
+          <button type="button" key={item.slug} onClick={() => onOpenInfo(item.slug)}>
+            {item.label}
+          </button>
+        ))}
       </div>
 
       <div className="footer-bottom">

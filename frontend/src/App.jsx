@@ -13,6 +13,7 @@ import ProductDetailPage from "./pages/ProductDetailPage.jsx";
 import FavoritesPage from "./pages/FavoritesPage.jsx";
 import DashboardPage from "./pages/DashboardPage.jsx";
 import AdminPage from "./pages/AdminPage.jsx";
+import InfoPage from "./pages/InfoPage.jsx";
 
 const adminPortalEmails = (import.meta.env.VITE_ADMIN_EMAILS || import.meta.env.VITE_ADMIN_EMAIL || "admin@ascend.store,admin@qadam.store")
   .split(",")
@@ -46,6 +47,7 @@ function loadRazorpayCheckout() {
 export default function App() {
   const isAdminPortal = window.location.pathname.startsWith("/admin");
   const [page, setPage] = useState("home");
+  const [infoSlug, setInfoSlug] = useState("");
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [filters, setFilters] = useState(baseFilters);
   const [products, setProducts] = useState([]);
@@ -222,11 +224,13 @@ export default function App() {
   function openCollection() {
     setPage("collection");
     setSelectedProduct(null);
+    setInfoSlug("");
   }
 
   function openDetails(product) {
     setSelectedProduct(product);
     setPage("detail");
+    setInfoSlug("");
   }
 
   function toggleFavorite(id) {
@@ -268,6 +272,7 @@ export default function App() {
 
   function goHomeSection(sectionId) {
     setPage("home");
+    setInfoSlug("");
     window.setTimeout(() => document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth" }), 80);
   }
 
@@ -289,6 +294,13 @@ export default function App() {
   function selectBrand(brand) {
     setFilters((current) => ({ ...current, brand }));
     openCollection();
+  }
+
+  function openInfoPage(slug) {
+    setSelectedProduct(null);
+    setInfoSlug(slug);
+    setPage("info");
+    setCartOpen(false);
   }
 
   function openAuth(mode = "login", intent = null) {
@@ -441,6 +453,7 @@ export default function App() {
     if (window.location.pathname !== "/") {
       window.history.pushState({}, "", "/");
     }
+    setInfoSlug("");
     setPage("home");
   }
 
@@ -577,6 +590,21 @@ export default function App() {
       );
     }
 
+    if (page === "info") {
+      return (
+        <InfoPage
+          slug={infoSlug}
+          testimonials={testimonials}
+          onBack={goHome}
+          onOpenCollection={openCollection}
+          onContactSubmit={(event) => {
+            event.preventDefault();
+            setToast("Message received. ASCEND support will follow up.");
+          }}
+        />
+      );
+    }
+
     return (
       <HomePage
         brands={brands}
@@ -615,7 +643,7 @@ export default function App() {
         onOpenCart={() => setCartOpen(true)}
       />
 
-      <div className="page-transition" key={`${page}-${selectedProduct?.id || ""}-${dashSection}`}>
+      <div className="page-transition" key={`${page}-${selectedProduct?.id || ""}-${dashSection}-${infoSlug}`}>
         {renderPage()}
       </div>
 
@@ -626,6 +654,7 @@ export default function App() {
         onSelectCategory={selectCategory}
         onShowSale={showFooterSale}
         onSelectBrand={selectBrand}
+        onOpenInfo={openInfoPage}
       />
 
       <CartDrawer
