@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { baseFilters } from "./lib/constants.js";
+import { baseFilters, BRAND_LOGO, BRAND_NAME } from "./lib/constants.js";
 import { buildQuery } from "./lib/format.js";
 import { apiPath } from "./lib/api.js";
 import Header from "./components/Header.jsx";
@@ -14,10 +14,33 @@ import FavoritesPage from "./pages/FavoritesPage.jsx";
 import DashboardPage from "./pages/DashboardPage.jsx";
 import AdminPage from "./pages/AdminPage.jsx";
 
-const adminPortalEmail = (import.meta.env.VITE_ADMIN_EMAIL || "admin@qadam.store").toLowerCase();
+const adminPortalEmails = (import.meta.env.VITE_ADMIN_EMAILS || import.meta.env.VITE_ADMIN_EMAIL || "admin@ascend.store,admin@qadam.store")
+  .split(",")
+  .map((email) => email.trim().toLowerCase())
+  .filter(Boolean);
 
 function isAdminEmail(email) {
-  return String(email || "").trim().toLowerCase() === adminPortalEmail;
+  return adminPortalEmails.includes(String(email || "").trim().toLowerCase());
+}
+
+function loadRazorpayCheckout() {
+  if (window.Razorpay) return Promise.resolve(true);
+
+  return new Promise((resolve) => {
+    const existing = document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]');
+    if (existing) {
+      existing.addEventListener("load", () => resolve(true), { once: true });
+      existing.addEventListener("error", () => resolve(false), { once: true });
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.async = true;
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
 }
 
 export default function App() {
@@ -56,6 +79,7 @@ export default function App() {
   const [authIntent, setAuthIntent] = useState(null);
   const [dashSection, setDashSection] = useState("overview");
   const [toast, setToast] = useState("");
+  const [paymentProcessing, setPaymentProcessing] = useState(false);
 
   const query = useMemo(() => buildQuery(filters), [filters]);
   const cartCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
@@ -273,16 +297,10 @@ export default function App() {
     setAuthOpen(true);
   }
 
-  function placeOrder(forUser) {
-    const buyer = forUser || user;
-    if (!buyer) {
-      openAuth("login", "checkout");
-      return;
-    }
-    if (cartItems.length === 0) return;
+  function buildOrderDraft(buyer) {
     const total = cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    const order = {
-      id: `QADAM-${Math.floor(100000 + Math.random() * 900000)}`,
+    return {
+      id: `ASCEND-${Math.floor(100000 + Math.random() * 900000)}`,
       date: new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }),
       items: cartItems.map((item) => ({
         id: item.id,
@@ -293,24 +311,130 @@ export default function App() {
         quantity: item.quantity
       })),
       total,
-      status: "Processing"
+      status: "Processing",
+      customerName: buyer.name,
+      customerEmail: buyer.email
     };
-    fetch(apiPath("/api/orders"), {
+  }
+
+  async function createRazorpayPaymentOrder(order) {
+    const response = await fetch(apiPath("/api/payments/razorpay/order"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        orderNumber: order.id,
+        total: order.total,
+        customerEmail: order.customerEmail
+      })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.message || "Could not start Razorpay payment");
+    return data;
+  }
+
+  async function savePaidOrder(order, payment) {
+    const response = await fetch(apiPath("/api/orders"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ...order,
         orderNumber: order.id,
-        customerName: buyer.name,
-        customerEmail: buyer.email
+        customerName: order.customerName,
+        customerEmail: order.customerEmail,
+        payment
       })
-    }).catch((error) => console.error(error));
-    setOrders((current) => [order, ...current]);
-    setCartItems([]);
-    setCartOpen(false);
-    setDashSection("orders");
-    setPage("dashboard");
-    setToast("Order placed successfully!");
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.message || "Payment captured, but order save failed");
+    return data.order || order;
+  }
+
+  async function placeOrder(forUser) {
+    const buyer = forUser || user;
+    if (!buyer) {
+      openAuth("login", "checkout");
+      return;
+    }
+    if (cartItems.length === 0) return;
+    if (paymentProcessing) return;
+
+    const order = buildOrderDraft(buyer);
+    setPaymentProcessing(true);
+    setToast("Opening Razorpay checkout...");
+
+    try {
+      const [checkoutReady, paymentOrder] = await Promise.all([loadRazorpayCheckout(), createRazorpayPaymentOrder(order)]);
+      if (!checkoutReady || !window.Razorpay) throw new Error("Razorpay checkout could not be loaded");
+
+      const options = {
+        key: paymentOrder.keyId,
+        amount: paymentOrder.amount,
+        currency: paymentOrder.currency || "INR",
+        name: BRAND_NAME,
+        description: `Order ${paymentOrder.orderNumber || order.id}`,
+        image: new URL(BRAND_LOGO, window.location.origin).href,
+        order_id: paymentOrder.razorpayOrderId || undefined,
+        prefill: {
+          name: buyer.name,
+          email: buyer.email
+        },
+        notes: {
+          merchant_id: paymentOrder.merchantId,
+          order_number: paymentOrder.orderNumber || order.id,
+          store: BRAND_NAME
+        },
+        theme: {
+          color: "#171717"
+        },
+        handler: async (response) => {
+          try {
+            const payment = {
+              provider: "razorpay",
+              method: "razorpay",
+              status: "paid",
+              merchantId: paymentOrder.merchantId,
+              razorpayOrderId: response.razorpay_order_id || paymentOrder.razorpayOrderId || "",
+              razorpayPaymentId: response.razorpay_payment_id || "",
+              razorpaySignature: response.razorpay_signature || "",
+              serverOrder: Boolean(paymentOrder.serverOrder)
+            };
+            const savedOrder = await savePaidOrder({ ...order, id: paymentOrder.orderNumber || order.id }, payment);
+            const localOrder = {
+              ...order,
+              ...savedOrder,
+              id: savedOrder.orderNumber || savedOrder.id || paymentOrder.orderNumber || order.id,
+              payment
+            };
+            setOrders((current) => [localOrder, ...current]);
+            setCartItems([]);
+            setCartOpen(false);
+            setDashSection("orders");
+            setPage("dashboard");
+            setToast("Razorpay payment successful. Order placed.");
+          } catch (error) {
+            setToast(error.message);
+          } finally {
+            setPaymentProcessing(false);
+          }
+        },
+        modal: {
+          ondismiss: () => {
+            setPaymentProcessing(false);
+            setToast("Razorpay payment cancelled.");
+          }
+        }
+      };
+
+      const checkout = new window.Razorpay(options);
+      checkout.on("payment.failed", (response) => {
+        setPaymentProcessing(false);
+        setToast(response.error?.description || "Razorpay payment failed.");
+      });
+      checkout.open();
+    } catch (error) {
+      setPaymentProcessing(false);
+      setToast(error.message);
+    }
   }
 
   function goHome() {
@@ -513,6 +637,7 @@ export default function App() {
         onDelete={deleteItem}
         onCheckout={handleCheckout}
         isAuthed={Boolean(user)}
+        isCheckingOut={paymentProcessing}
       />
 
       <AuthModal

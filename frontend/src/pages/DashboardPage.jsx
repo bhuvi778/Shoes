@@ -166,7 +166,9 @@ export default function DashboardPage({
                       <div className="order-card-head">
                         <div>
                           <strong>{order.id}</strong>
-                          <span>Placed {order.date}</span>
+                          <span>
+                            Placed {order.date} &middot; {order.payment?.provider === "razorpay" ? `Razorpay ${order.payment?.status || "pending"}` : "Payment pending"}
+                          </span>
                         </div>
                         <span className={`order-status status-${order.status.toLowerCase()}`}>{order.status}</span>
                       </div>

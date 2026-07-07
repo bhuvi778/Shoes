@@ -8,7 +8,7 @@ const productSchema = new mongoose.Schema(
   {
     name: { type: String, required: true },
     slug: { type: String, required: true, unique: true },
-    brand: { type: String, default: "Qadam" },
+    brand: { type: String, default: "ASCEND" },
     color: { type: String, required: true },
     category: { type: String, required: true },
     price: { type: Number, required: true },

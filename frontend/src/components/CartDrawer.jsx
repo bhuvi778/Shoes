@@ -2,7 +2,7 @@ import { Minus, Plus, X } from "lucide-react";
 import { FREE_SHIPPING_THRESHOLD } from "../lib/constants.js";
 import { inr } from "../lib/format.js";
 
-export default function CartDrawer({ items, isOpen, onClose, onAdd, onRemove, onDelete, onCheckout, isAuthed }) {
+export default function CartDrawer({ items, isOpen, onClose, onAdd, onRemove, onDelete, onCheckout, isAuthed, isCheckingOut }) {
   const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const shippingLeft = Math.max(0, FREE_SHIPPING_THRESHOLD - subtotal);
 
@@ -55,8 +55,8 @@ export default function CartDrawer({ items, isOpen, onClose, onAdd, onRemove, on
             <span>Subtotal</span>
             <strong>{inr(subtotal)}</strong>
           </div>
-          <button className="checkout-button" type="button" disabled={items.length === 0} onClick={onCheckout}>
-            {isAuthed ? "Checkout" : "Sign in & Checkout"}
+          <button className="checkout-button" type="button" disabled={items.length === 0 || isCheckingOut} onClick={onCheckout}>
+            {isCheckingOut ? "Opening Razorpay..." : isAuthed ? "Pay with Razorpay" : "Sign in & Pay"}
           </button>
         </div>
       </aside>

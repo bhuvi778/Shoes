@@ -183,8 +183,8 @@ function fromCouponForm(coupon) {
 }
 
 export default function AdminPage({ onDataChanged }) {
-  const [token, setToken] = useState(() => localStorage.getItem("qadam_admin_token") || "");
-  const [login, setLogin] = useState({ email: "admin@qadam.store", password: "" });
+  const [token, setToken] = useState(() => localStorage.getItem("ascend_admin_token") || localStorage.getItem("qadam_admin_token") || "");
+  const [login, setLogin] = useState({ email: "admin@ascend.store", password: "" });
   const [section, setSection] = useState("overview");
   const [overview, setOverview] = useState(null);
   const [products, setProducts] = useState([]);
@@ -277,6 +277,7 @@ export default function AdminPage({ onDataChanged }) {
     } catch (error) {
       setMessage(error.message);
       setToken("");
+      localStorage.removeItem("ascend_admin_token");
       localStorage.removeItem("qadam_admin_token");
     } finally {
       setLoading(false);
@@ -294,7 +295,8 @@ export default function AdminPage({ onDataChanged }) {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || "Login failed");
-      localStorage.setItem("qadam_admin_token", data.token);
+      localStorage.setItem("ascend_admin_token", data.token);
+      localStorage.removeItem("qadam_admin_token");
       setToken(data.token);
       setMessage(data.message || `Signed in as ${data.admin.email}`);
     } catch (error) {
@@ -305,6 +307,7 @@ export default function AdminPage({ onDataChanged }) {
   }
 
   function logout() {
+    localStorage.removeItem("ascend_admin_token");
     localStorage.removeItem("qadam_admin_token");
     setToken("");
     setProducts([]);
@@ -1376,7 +1379,10 @@ export default function AdminPage({ onDataChanged }) {
               <div>
                 <strong>{order.orderNumber}</strong>
                 <span>{order.customerName || "Guest"} | {order.customerEmail || "No email"} | {order.date || "No date"}</span>
-                <small>{order.items?.length || 0} items | {inr(order.total || 0)}</small>
+                <small>
+                  {order.items?.length || 0} items | {inr(order.total || 0)} | {order.payment?.provider === "razorpay" ? `Razorpay ${order.payment?.status || "pending"}` : "Payment pending"}
+                </small>
+                {order.payment?.razorpayPaymentId && <small>Payment ID {order.payment.razorpayPaymentId}</small>}
               </div>
               <select value={order.status || "Processing"} onChange={(event) => updateOrderStatus(order.id, event.target.value)}>
                 {["Processing", "Confirmed", "Packed", "Shipped", "Delivered", "Cancelled"].map((status) => (

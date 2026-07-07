@@ -17,9 +17,13 @@ const clientUrlSuffixes = (process.env.CLIENT_URL_SUFFIXES || ".vercel.app")
   .split(",")
   .map((suffix) => suffix.trim())
   .filter(Boolean);
-const adminEmail = process.env.ADMIN_EMAIL || "admin@qadam.store";
-const adminPassword = process.env.ADMIN_PASSWORD || "Qadam@2026";
+const adminEmail = process.env.ADMIN_EMAIL || "admin@ascend.store";
+const adminPassword = process.env.ADMIN_PASSWORD || "Ascend@2026";
 const adminTokenSecret = process.env.ADMIN_TOKEN_SECRET || "change-this-secret-in-render";
+const storeName = "ASCEND";
+const razorpayMerchantId = process.env.RAZORPAY_MERCHANT_ID || process.env.RAZORPAY_KEY_ID || "RuhMGfsW6PMspM";
+const razorpayKeyId = process.env.RAZORPAY_KEY_ID || razorpayMerchantId;
+const razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET || "";
 
 let mongoReady = false;
 
@@ -54,7 +58,7 @@ const productSchema = new mongoose.Schema(
   {
     name: { type: String, required: true },
     slug: { type: String, required: true, unique: true },
-    brand: { type: String, default: "Qadam" },
+    brand: { type: String, default: storeName },
     color: { type: String, required: true },
     category: { type: String, required: true },
     price: { type: Number, required: true },
@@ -176,7 +180,18 @@ const orderSchema = new mongoose.Schema(
     ],
     total: { type: Number, default: 0 },
     status: { type: String, default: "Processing" },
-    source: { type: String, default: "website" }
+    source: { type: String, default: "website" },
+    payment: {
+      provider: { type: String, default: "razorpay" },
+      method: { type: String, default: "razorpay" },
+      status: { type: String, default: "pending" },
+      merchantId: String,
+      razorpayOrderId: String,
+      razorpayPaymentId: String,
+      razorpaySignature: String,
+      verified: { type: Boolean, default: false },
+      serverOrder: { type: Boolean, default: false }
+    }
   },
   { timestamps: true }
 );
@@ -308,7 +323,7 @@ function sanitizeProduct(body) {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, ""),
-    brand: String(body.brand || "Qadam").trim(),
+    brand: String(body.brand || storeName).trim(),
     color: String(body.color || "").trim(),
     category: String(body.category || "Casual").trim(),
     price: toNumber(body.price),
@@ -443,6 +458,49 @@ function validateCoupon(coupon) {
   return "";
 }
 
+function toRazorpayAmount(amount) {
+  return Math.round(toNumber(amount) * 100);
+}
+
+function verifyRazorpaySignature({ razorpayOrderId, razorpayPaymentId, razorpaySignature }) {
+  if (!razorpayKeySecret || !razorpayOrderId || !razorpayPaymentId || !razorpaySignature) return false;
+  const expected = crypto
+    .createHmac("sha256", razorpayKeySecret)
+    .update(`${razorpayOrderId}|${razorpayPaymentId}`)
+    .digest("hex");
+
+  if (expected.length !== razorpaySignature.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(razorpaySignature));
+}
+
+async function createRazorpayOrder({ amount, orderNumber, customerEmail }) {
+  if (!razorpayKeySecret) return null;
+
+  const response = await fetch("https://api.razorpay.com/v1/orders", {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${Buffer.from(`${razorpayKeyId}:${razorpayKeySecret}`).toString("base64")}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      amount,
+      currency: "INR",
+      receipt: orderNumber.slice(0, 40),
+      notes: {
+        store: storeName,
+        customerEmail: customerEmail || "",
+        merchantId: razorpayMerchantId
+      }
+    })
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error?.description || data.message || "Razorpay order creation failed");
+  }
+  return data;
+}
+
 function sanitizeOrder(body) {
   const items = Array.isArray(body.items)
     ? body.items.map((item) => ({
@@ -455,21 +513,33 @@ function sanitizeOrder(body) {
       }))
     : [];
   const total = body.total ? toNumber(body.total) : items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const payment = body.payment || {};
   return {
-    orderNumber: String(body.orderNumber || body.id || `QADAM-${Math.floor(100000 + Math.random() * 900000)}`).trim(),
+    orderNumber: String(body.orderNumber || body.id || `ASCEND-${Math.floor(100000 + Math.random() * 900000)}`).trim(),
     customerName: String(body.customerName || body.customer?.name || "").trim(),
     customerEmail: String(body.customerEmail || body.customer?.email || "").trim().toLowerCase(),
     items,
     total,
     status: String(body.status || "Processing").trim(),
-    source: String(body.source || "website").trim()
+    source: String(body.source || "website").trim(),
+    payment: {
+      provider: String(payment.provider || "razorpay").trim(),
+      method: String(payment.method || "razorpay").trim(),
+      status: String(payment.status || "pending").trim(),
+      merchantId: String(payment.merchantId || razorpayMerchantId).trim(),
+      razorpayOrderId: String(payment.razorpayOrderId || payment.razorpay_order_id || "").trim(),
+      razorpayPaymentId: String(payment.razorpayPaymentId || payment.razorpay_payment_id || "").trim(),
+      razorpaySignature: String(payment.razorpaySignature || payment.razorpay_signature || "").trim(),
+      verified: payment.verified === true,
+      serverOrder: payment.serverOrder === true
+    }
   };
 }
 
 app.get("/", (_req, res) => {
   res.json({
     ok: true,
-    service: "qadam-shoe-store-api",
+    service: "ascend-shoe-store-api",
     message: "Backend is running. Use /api/health, /api/products, /api/brands, or /api/testimonials.",
     database: mongoReady ? "mongodb" : "seed-data"
   });
@@ -566,6 +636,7 @@ function shapeOrders(items) {
       total: order.total || 0,
       status: order.status || "Processing",
       source: order.source || "website",
+      payment: order.payment || {},
       createdAt: order.createdAt,
       date: order.createdAt ? new Date(order.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : ""
     };
@@ -730,7 +801,7 @@ async function ensureDefaultAdmin() {
 app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
-    service: "qadam-shoe-store-api",
+    service: "ascend-shoe-store-api",
     database: mongoReady ? "mongodb" : "seed-data"
   });
 });
@@ -849,9 +920,58 @@ app.post("/api/visits", async (req, res, next) => {
   }
 });
 
+app.get("/api/payments/razorpay/config", (_req, res) => {
+  res.json({
+    provider: "razorpay",
+    keyId: razorpayKeyId,
+    merchantId: razorpayMerchantId,
+    currency: "INR",
+    storeName,
+    serverOrdersEnabled: Boolean(razorpayKeySecret)
+  });
+});
+
+app.post("/api/payments/razorpay/order", async (req, res, next) => {
+  try {
+    const amount = toRazorpayAmount(req.body.total);
+    if (!amount || amount < 100) {
+      res.status(400).json({ message: "A valid order total is required for Razorpay payment" });
+      return;
+    }
+
+    const orderNumber = String(req.body.orderNumber || `ASCEND-${Math.floor(100000 + Math.random() * 900000)}`).trim().slice(0, 40);
+    const customerEmail = String(req.body.customerEmail || "").trim().toLowerCase();
+    const razorpayOrder = await createRazorpayOrder({ amount, orderNumber, customerEmail });
+
+    res.status(201).json({
+      provider: "razorpay",
+      keyId: razorpayKeyId,
+      merchantId: razorpayMerchantId,
+      currency: "INR",
+      amount,
+      orderNumber,
+      razorpayOrderId: razorpayOrder?.id || "",
+      serverOrder: Boolean(razorpayOrder?.id)
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/orders", async (req, res, next) => {
   try {
     const order = sanitizeOrder(req.body);
+    if (order.payment?.provider === "razorpay" && razorpayKeySecret && order.payment.razorpayOrderId) {
+      const verified = verifyRazorpaySignature(order.payment);
+      if (!verified) {
+        res.status(400).json({ message: "Razorpay payment verification failed" });
+        return;
+      }
+      order.payment.verified = true;
+    }
+    if (order.payment?.razorpayPaymentId) {
+      order.payment.status = "paid";
+    }
     if (!mongoReady) {
       res.json({ order, stored: false });
       return;
@@ -1430,6 +1550,6 @@ connectMongo()
   })
   .finally(() => {
     app.listen(port, () => {
-      console.log(`Qadam API running on http://localhost:${port}`);
+      console.log(`${storeName} API running on http://localhost:${port}`);
     });
   });
