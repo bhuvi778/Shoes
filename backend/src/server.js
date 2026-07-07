@@ -128,6 +128,16 @@ const customerSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+const categorySchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true, unique: true },
+    image: String,
+    description: String,
+    active: { type: Boolean, default: true }
+  },
+  { timestamps: true }
+);
+
 const testimonialSchema = new mongoose.Schema(
   {
     name: { type: String, required: true },
@@ -190,6 +200,7 @@ const visitorSchema = new mongoose.Schema(
 const SiteSettings = mongoose.model("SiteSettings", siteSettingsSchema);
 const Admin = mongoose.model("Admin", adminSchema);
 const Customer = mongoose.model("Customer", customerSchema);
+const Category = mongoose.model("Category", categorySchema);
 const Testimonial = mongoose.model("Testimonial", testimonialSchema);
 const Order = mongoose.model("Order", orderSchema);
 const Coupon = mongoose.model("Coupon", couponSchema);
@@ -387,6 +398,20 @@ function sanitizeCoupon(body) {
   };
 }
 
+function sanitizeCategory(body) {
+  return {
+    name: String(body.name || "").trim(),
+    image: String(body.image || "").trim(),
+    description: String(body.description || "").trim(),
+    active: body.active !== false
+  };
+}
+
+function validateCategory(category) {
+  if (!category.name) return "Category name is required";
+  return "";
+}
+
 function validateCoupon(coupon) {
   const missing = ["code", "title", "value"].filter((key) => !coupon[key]);
   if (missing.length > 0) return `Missing required coupon fields: ${missing.join(", ")}`;
@@ -450,6 +475,24 @@ function shapeProducts(products) {
       offerText: item.offerText,
       couponCode: item.couponCode,
       featured: item.featured
+    };
+  });
+}
+
+function shapeCategories(categories, products = []) {
+  return categories.map((category) => {
+    const item = category.toObject ? category.toObject() : category;
+    const categoryProducts = products.filter((product) => product.category === item.name);
+    const heroProduct = categoryProducts.find((product) => product.categoryImage) || categoryProducts.find((product) => product.featured) || categoryProducts[0];
+    const prices = categoryProducts.map((product) => Number(product.price || 0)).filter(Boolean);
+    return {
+      id: String(item._id || item.name),
+      name: item.name,
+      image: item.image || heroProduct?.categoryImage || heroProduct?.image || "",
+      description: item.description || "",
+      active: item.active !== false,
+      count: categoryProducts.length,
+      fromPrice: prices.length ? Math.min(...prices) : 0
     };
   });
 }
@@ -547,6 +590,15 @@ async function readProducts(query) {
   return applyFilters(shapeProducts(products), query);
 }
 
+async function readCategories(products = []) {
+  if (!mongoReady) {
+    const names = [...new Set(products.map((product) => product.category).filter(Boolean))].sort();
+    return shapeCategories(names.map((name) => ({ name, active: true })), products);
+  }
+  const categories = await Category.find({ active: { $ne: false } }).sort({ name: 1 }).lean();
+  return shapeCategories(categories, products);
+}
+
 async function connectMongo() {
   if (!process.env.MONGODB_URI) {
     console.log("MONGODB_URI not set. Using seeded in-memory product data for local development.");
@@ -560,6 +612,20 @@ async function connectMongo() {
   if (count === 0) {
     await Product.insertMany(seedProducts);
     console.log("MongoDB connected and product catalog seeded.");
+  }
+
+  const existingCategoryCount = await Category.countDocuments();
+  if (existingCategoryCount === 0) {
+    const products = await Product.find({}).lean();
+    const categorySeeds = [...new Set(products.map((product) => product.category).filter(Boolean))].map((name) => {
+      const categoryProduct = products.find((product) => product.category === name && product.categoryImage) || products.find((product) => product.category === name);
+      return {
+        name,
+        image: categoryProduct?.categoryImage || categoryProduct?.image || "",
+        active: true
+      };
+    });
+    if (categorySeeds.length) await Category.insertMany(categorySeeds);
   }
 
   await SiteSettings.updateOne({ key: "main" }, { $setOnInsert: defaultSiteSettings }, { upsert: true });
@@ -628,16 +694,7 @@ app.get("/api/products", async (req, res, next) => {
 app.get("/api/categories", async (req, res, next) => {
   try {
     const products = await readProducts(req.query);
-    const categories = [...new Set(products.map((product) => product.category))].sort().map((category) => {
-      const categoryProducts = products.filter((product) => product.category === category);
-      const heroProduct = categoryProducts.find((product) => product.categoryImage) || categoryProducts.find((product) => product.featured) || categoryProducts[0];
-      return {
-        name: category,
-        count: categoryProducts.length,
-        image: heroProduct?.categoryImage || heroProduct?.image,
-        fromPrice: Math.min(...categoryProducts.map((product) => product.price))
-      };
-    });
+    const categories = await readCategories(products);
     res.json({ categories, count: categories.length });
   } catch (error) {
     next(error);
@@ -807,7 +864,7 @@ app.get("/api/admin/overview", requireAdmin, async (_req, res, next) => {
     const orderItems = mongoReady ? await Order.find({}).sort({ updatedAt: -1 }).limit(6).lean() : [];
     const activeSince = new Date(Date.now() - 15 * 60 * 1000);
     const brands = new Set(products.map((product) => product.brand).filter(Boolean));
-    const categories = new Set(products.map((product) => product.category).filter(Boolean));
+    const categories = mongoReady ? await Category.countDocuments({ active: { $ne: false } }) : new Set(products.map((product) => product.category).filter(Boolean)).size;
     const totalInventory = products.reduce((sum, product) => sum + Number(product.inventory || 0), 0);
     const inventoryValue = products.reduce((sum, product) => sum + Number(product.inventory || 0) * Number(product.price || 0), 0);
     const revenue = orderItems.reduce((sum, order) => sum + Number(order.total || 0), 0);
@@ -820,7 +877,7 @@ app.get("/api/admin/overview", requireAdmin, async (_req, res, next) => {
         visitors: mongoReady ? await Visitor.countDocuments() : 0,
         activeVisitors: mongoReady ? await Visitor.countDocuments({ lastSeenAt: { $gte: activeSince } }) : 0,
         brands: brands.size,
-        categories: categories.size,
+        categories,
         featured: products.filter((product) => product.featured).length,
         testimonials: mongoReady ? await Testimonial.countDocuments() : seedTestimonials.length,
         revenue,
@@ -857,6 +914,87 @@ app.get("/api/admin/products", requireAdmin, async (_req, res, next) => {
   try {
     const products = mongoReady ? await Product.find({}).sort({ updatedAt: -1 }).lean() : seedProducts;
     res.json({ products: shapeProducts(products), count: products.length });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/admin/categories", requireAdmin, async (_req, res, next) => {
+  try {
+    const products = mongoReady ? shapeProducts(await Product.find({}).lean()) : shapeProducts(seedProducts);
+    if (!mongoReady) {
+      const categories = await readCategories(products);
+      res.json({ categories, count: categories.length });
+      return;
+    }
+    const categories = await Category.find({}).sort({ name: 1 }).lean();
+    res.json({ categories: shapeCategories(categories, products), count: categories.length });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/admin/categories", requireAdmin, async (req, res, next) => {
+  try {
+    if (!mongoReady) {
+      res.status(503).json({ message: "MongoDB is required for admin category updates" });
+      return;
+    }
+    const category = sanitizeCategory(req.body);
+    const message = validateCategory(category);
+    if (message) {
+      res.status(400).json({ message });
+      return;
+    }
+    const created = await Category.create(category);
+    const products = shapeProducts(await Product.find({}).lean());
+    res.status(201).json({ category: shapeCategories([created], products)[0] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.put("/api/admin/categories/:id", requireAdmin, async (req, res, next) => {
+  try {
+    if (!mongoReady) {
+      res.status(503).json({ message: "MongoDB is required for admin category updates" });
+      return;
+    }
+    const category = sanitizeCategory(req.body);
+    const message = validateCategory(category);
+    if (message) {
+      res.status(400).json({ message });
+      return;
+    }
+    const previous = await Category.findById(req.params.id).lean();
+    const updated = await Category.findByIdAndUpdate(req.params.id, category, { new: true, runValidators: true });
+    if (!updated) {
+      res.status(404).json({ message: "Category not found" });
+      return;
+    }
+    if (previous?.name && previous.name !== updated.name) {
+      await Product.updateMany({ category: previous.name }, { $set: { category: updated.name } });
+    }
+    const products = shapeProducts(await Product.find({}).lean());
+    res.json({ category: shapeCategories([updated], products)[0] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/admin/categories/:id", requireAdmin, async (req, res, next) => {
+  try {
+    if (!mongoReady) {
+      res.status(503).json({ message: "MongoDB is required for admin category updates" });
+      return;
+    }
+    const deleted = await Category.findByIdAndDelete(req.params.id);
+    if (!deleted) {
+      res.status(404).json({ message: "Category not found" });
+      return;
+    }
+    await Product.updateMany({ category: deleted.name }, { $set: { category: "Uncategorized" } });
+    res.json({ ok: true });
   } catch (error) {
     next(error);
   }

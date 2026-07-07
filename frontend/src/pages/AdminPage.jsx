@@ -35,7 +35,7 @@ const emptyProduct = {
   slug: "",
   brand: "",
   color: "",
-  category: "Casual",
+  category: "",
   price: "",
   oldPrice: "",
   badge: "",
@@ -72,6 +72,14 @@ const emptyCoupon = {
   active: true
 };
 
+const emptyCategory = {
+  id: "",
+  name: "",
+  image: "",
+  description: "",
+  active: true
+};
+
 const defaultSettings = {
   hero: {
     eyebrow: "",
@@ -95,6 +103,7 @@ const navItems = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "storefront", label: "Storefront", icon: Store },
   { id: "products", label: "Products", icon: ShoppingBag },
+  { id: "categories", label: "Categories", icon: Boxes },
   { id: "orders", label: "Orders", icon: ClipboardList },
   { id: "coupons", label: "Coupons", icon: Tag },
   { id: "visitors", label: "Visitors", icon: Activity },
@@ -169,6 +178,7 @@ export default function AdminPage({ onDataChanged }) {
   const [section, setSection] = useState("overview");
   const [overview, setOverview] = useState(null);
   const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [testimonials, setTestimonials] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -178,6 +188,7 @@ export default function AdminPage({ onDataChanged }) {
   const [productForm, setProductForm] = useState(emptyProduct);
   const [testimonialForm, setTestimonialForm] = useState(emptyTestimonial);
   const [couponForm, setCouponForm] = useState(emptyCoupon);
+  const [categoryForm, setCategoryForm] = useState(emptyCategory);
   const [settings, setSettings] = useState(defaultSettings);
   const [productModalOpen, setProductModalOpen] = useState(false);
   const [productView, setProductView] = useState("card");
@@ -189,6 +200,7 @@ export default function AdminPage({ onDataChanged }) {
   const selectedProduct = useMemo(() => products.find((product) => product.id === productForm.id), [productForm.id, products]);
   const selectedTestimonial = useMemo(() => testimonials.find((item) => item.id === testimonialForm.id), [testimonialForm.id, testimonials]);
   const selectedCoupon = useMemo(() => coupons.find((coupon) => coupon.id === couponForm.id), [couponForm.id, coupons]);
+  const selectedCategory = useMemo(() => categories.find((category) => category.id === categoryForm.id), [categoryForm.id, categories]);
   const filteredProducts = useMemo(() => {
     const search = productSearch.trim().toLowerCase();
     if (!search) return products;
@@ -225,7 +237,7 @@ export default function AdminPage({ onDataChanged }) {
   async function loadAdminData(nextToken = token) {
     setLoading(true);
     try {
-      const [overviewData, productData, settingsData, customerData, testimonialData, orderData, couponData, visitorData] = await Promise.all([
+      const [overviewData, productData, settingsData, customerData, testimonialData, orderData, couponData, visitorData, categoryData] = await Promise.all([
         adminFetch("/api/admin/overview", {}, nextToken),
         adminFetch("/api/admin/products", {}, nextToken),
         adminFetch("/api/admin/settings", {}, nextToken),
@@ -233,10 +245,12 @@ export default function AdminPage({ onDataChanged }) {
         adminFetch("/api/admin/testimonials", {}, nextToken),
         adminFetch("/api/admin/orders", {}, nextToken),
         adminFetch("/api/admin/coupons", {}, nextToken),
-        adminFetch("/api/admin/visitors", {}, nextToken)
+        adminFetch("/api/admin/visitors", {}, nextToken),
+        adminFetch("/api/admin/categories", {}, nextToken)
       ]);
       setOverview(overviewData);
       setProducts(productData.products || []);
+      setCategories(categoryData.categories || []);
       setSettings(settingsData.settings || defaultSettings);
       setCustomers(customerData.customers || []);
       setTestimonials(testimonialData.testimonials || []);
@@ -279,6 +293,7 @@ export default function AdminPage({ onDataChanged }) {
     localStorage.removeItem("qadam_admin_token");
     setToken("");
     setProducts([]);
+    setCategories([]);
     setCustomers([]);
     setTestimonials([]);
     setOrders([]);
@@ -289,6 +304,7 @@ export default function AdminPage({ onDataChanged }) {
     setProductForm(emptyProduct);
     setTestimonialForm(emptyTestimonial);
     setCouponForm(emptyCoupon);
+    setCategoryForm(emptyCategory);
     setProductModalOpen(false);
   }
 
@@ -463,7 +479,8 @@ export default function AdminPage({ onDataChanged }) {
   }
 
   function openProductModal(product = emptyProduct) {
-    setProductForm(toFormProduct(product));
+    const nextProduct = product.id ? product : { ...emptyProduct, category: categories.find((category) => category.active)?.name || "" };
+    setProductForm(toFormProduct(nextProduct));
     setProductModalOpen(true);
   }
 
@@ -553,6 +570,41 @@ export default function AdminPage({ onDataChanged }) {
     }
   }
 
+  async function saveCategory(event) {
+    event.preventDefault();
+    setLoading(true);
+    try {
+      const path = categoryForm.id ? `/api/admin/categories/${categoryForm.id}` : "/api/admin/categories";
+      const method = categoryForm.id ? "PUT" : "POST";
+      await adminFetch(path, { method, body: JSON.stringify(categoryForm) });
+      setMessage(categoryForm.id ? "Category updated." : "Category created.");
+      setCategoryForm(emptyCategory);
+      await loadAdminData();
+      onDataChanged?.();
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function deleteCategory(category) {
+    const confirmed = window.confirm(`Delete category "${category.name}"? Products in this category will move to Uncategorized.`);
+    if (!confirmed) return;
+    setLoading(true);
+    try {
+      await adminFetch(`/api/admin/categories/${category.id}`, { method: "DELETE" });
+      setMessage("Category deleted. Matching products moved to Uncategorized.");
+      setCategoryForm(emptyCategory);
+      await loadAdminData();
+      onDataChanged?.();
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function renderOverview() {
     const stats = overview?.stats || {};
     const cards = [
@@ -563,7 +615,7 @@ export default function AdminPage({ onDataChanged }) {
       { label: "Coupons", value: stats.coupons || coupons.length || 0, icon: Tag },
       { label: "Reviews", value: stats.testimonials || testimonials.length || 0, icon: MessageSquare },
       { label: "Revenue", value: inr(stats.revenue || 0), icon: BarChart3 },
-      { label: "Brands", value: stats.brands || 0, icon: Boxes }
+      { label: "Categories", value: stats.categories || categories.length || 0, icon: Boxes }
     ];
 
     return (
@@ -905,7 +957,14 @@ export default function AdminPage({ onDataChanged }) {
                 </label>
                 <label>
                   <span>Category</span>
-                  <input value={productForm.category} onChange={(event) => setProductForm((current) => ({ ...current, category: event.target.value }))} />
+                  <select value={productForm.category} onChange={(event) => setProductForm((current) => ({ ...current, category: event.target.value }))}>
+                    <option value={productForm.category}>{productForm.category || "Select category"}</option>
+                    {categories
+                      .filter((category) => category.active && category.name !== productForm.category)
+                      .map((category) => (
+                        <option value={category.name} key={category.id || category.name}>{category.name}</option>
+                      ))}
+                  </select>
                 </label>
               </div>
               <div className="admin-three">
@@ -1091,6 +1150,73 @@ export default function AdminPage({ onDataChanged }) {
     );
   }
 
+  function renderCategories() {
+    return (
+      <section className="admin-review-workspace">
+        <form className="admin-card admin-form" onSubmit={saveCategory}>
+          <div className="admin-card-title">
+            <Boxes />
+            <h2>{selectedCategory ? "Edit category" : "Create category"}</h2>
+          </div>
+          <label>
+            <span>Category name</span>
+            <input value={categoryForm.name} onChange={(event) => setCategoryForm((current) => ({ ...current, name: event.target.value }))} placeholder="Running" />
+          </label>
+          <label>
+            <span>Category image URL</span>
+            <input value={categoryForm.image} onChange={(event) => setCategoryForm((current) => ({ ...current, image: event.target.value }))} placeholder="https://..." />
+          </label>
+          <label>
+            <span>Description optional</span>
+            <textarea value={categoryForm.description} onChange={(event) => setCategoryForm((current) => ({ ...current, description: event.target.value }))} />
+          </label>
+          <label className="admin-check">
+            <input type="checkbox" checked={categoryForm.active} onChange={(event) => setCategoryForm((current) => ({ ...current, active: event.target.checked }))} />
+            <span>Show on storefront</span>
+          </label>
+          <div className="admin-actions">
+            <button className="checkout-button" type="submit" disabled={loading}>
+              <Save />
+              Save Category
+            </button>
+            <button className="dash-ghost" type="button" onClick={() => setCategoryForm(emptyCategory)}>
+              <Plus />
+              New
+            </button>
+          </div>
+        </form>
+
+        <section className="admin-card">
+          <div className="admin-card-title">
+            <Image />
+            <h2>Categories</h2>
+          </div>
+          <div className="admin-review-list">
+            {categories.map((category) => (
+              <article className="admin-category-row" key={category.id || category.name}>
+                <div className="admin-category-thumb">
+                  {category.image ? <img src={category.image} alt="" /> : <Boxes />}
+                </div>
+                <div>
+                  <strong>{category.name}</strong>
+                  <span>{category.count || 0} products | {category.active ? "Visible" : "Hidden"}</span>
+                  {category.description && <p>{category.description}</p>}
+                </div>
+                <button className="dash-ghost" type="button" onClick={() => setCategoryForm({ ...emptyCategory, ...category })}>
+                  Edit
+                </button>
+                <button className="icon-button admin-delete" type="button" onClick={() => deleteCategory(category)} aria-label={`Delete ${category.name}`}>
+                  <Trash2 />
+                </button>
+              </article>
+            ))}
+            {categories.length === 0 && <p className="admin-empty">No categories yet.</p>}
+          </div>
+        </section>
+      </section>
+    );
+  }
+
   function renderOrders() {
     return (
       <section className="admin-card">
@@ -1260,6 +1386,7 @@ export default function AdminPage({ onDataChanged }) {
   function renderSection() {
     if (section === "storefront") return renderStorefront();
     if (section === "products") return renderProducts();
+    if (section === "categories") return renderCategories();
     if (section === "orders") return renderOrders();
     if (section === "coupons") return renderCoupons();
     if (section === "visitors") return renderVisitors();

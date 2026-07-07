@@ -1,11 +1,12 @@
 import { ChevronDown, Search, SlidersHorizontal } from "lucide-react";
-import { baseFilters, categories, MAX_PRICE, PRICE_RANGE } from "../lib/constants.js";
+import { baseFilters, categories as defaultCategories, MAX_PRICE, PRICE_RANGE } from "../lib/constants.js";
 import { inr } from "../lib/format.js";
 import ProductCard from "../components/ProductCard.jsx";
 import AppliedFilters from "../components/AppliedFilters.jsx";
 
 export default function CollectionPage({
   brands,
+  categories,
   filters,
   setFilters,
   products,
@@ -17,6 +18,7 @@ export default function CollectionPage({
   searchRef
 }) {
   const activeBrandCount = brands.reduce((sum, brand) => sum + brand.count, 0);
+  const filterCategories = ["All", ...((categories?.length ? categories.map((category) => category.name) : defaultCategories.slice(1)))];
 
   function clearFilter(key) {
     setFilters((current) => ({
@@ -56,7 +58,7 @@ export default function CollectionPage({
 
           <div className="sidebar-group">
             <h3>Category</h3>
-            {categories.map((category) => (
+            {filterCategories.map((category) => (
               <button
                 type="button"
                 key={category}

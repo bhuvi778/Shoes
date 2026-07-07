@@ -389,6 +389,7 @@ export default function App() {
       return (
         <CollectionPage
           brands={brands}
+          categories={categoryCards}
           filters={filters}
           setFilters={setFilters}
           products={products}
@@ -496,6 +497,7 @@ export default function App() {
 
       <Footer
         brands={brands}
+        categories={categoryCards}
         onHome={goHome}
         onSelectCategory={selectCategory}
         onShowSale={showFooterSale}

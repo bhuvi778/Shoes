@@ -1,6 +1,8 @@
-import { BRAND_NAME, categories } from "../lib/constants.js";
+import { BRAND_NAME, categories as defaultCategories } from "../lib/constants.js";
 
-export default function Footer({ brands, onHome, onSelectCategory, onShowSale, onSelectBrand }) {
+export default function Footer({ brands, categories, onHome, onSelectCategory, onShowSale, onSelectBrand }) {
+  const footerCategories = categories?.length ? categories.map((category) => category.name) : defaultCategories.slice(1);
+
   return (
     <footer className="site-footer">
       <div className="footer-brand">
@@ -12,7 +14,7 @@ export default function Footer({ brands, onHome, onSelectCategory, onShowSale, o
 
       <div className="footer-column">
         <h3>Shop</h3>
-        {categories.slice(1).map((category) => (
+        {footerCategories.map((category) => (
           <button type="button" key={category} onClick={() => onSelectCategory(category)}>
             {category}
           </button>
