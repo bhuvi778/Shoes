@@ -4174,12 +4174,13 @@ button {
   top: 0;
   height: 100vh;
   display: grid;
-  grid-template-rows: auto 1fr auto;
-  gap: 24px;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  gap: 14px;
   padding: 26px 18px;
   border-right: 1px solid var(--line);
   background: rgba(8, 9, 8, 0.92);
   backdrop-filter: blur(18px);
+  overflow: hidden;
 }
 
 .admin-brand {
@@ -4220,6 +4221,20 @@ button {
   display: grid;
   align-content: start;
   gap: 6px;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.28) transparent;
+}
+
+.admin-sidebar nav::-webkit-scrollbar {
+  width: 6px;
+}
+
+.admin-sidebar nav::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.24);
+  border-radius: 999px;
 }
 
 .admin-sidebar nav button,
@@ -4255,6 +4270,7 @@ button {
 }
 
 .admin-storefront-link {
+  align-self: end;
   border-radius: 6px;
   color: var(--muted-strong);
 }
@@ -4426,10 +4442,13 @@ button {
   .admin-sidebar {
     position: static;
     height: auto;
+    overflow: visible;
   }
 
   .admin-sidebar nav {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow: visible;
+    padding-right: 0;
   }
 
   .admin-main {
