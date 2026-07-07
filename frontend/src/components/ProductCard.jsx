@@ -36,6 +36,9 @@ export default function ProductCard({ product, isFavorite, onFavorite, onAddToCa
         <p className="product-brand">{product.brand}</p>
         <h3 className="product-name">{product.name}</h3>
         <p className="product-color">{product.color}</p>
+        {(product.offerText || product.couponCode) && (
+          <p className="product-offer">{product.offerText || `Use ${product.couponCode}`}</p>
+        )}
         <div className="rating-row" aria-label={`${product.rating} stars from ${product.reviewCount} reviews`}>
           <Star />
           <span>{product.rating}</span>

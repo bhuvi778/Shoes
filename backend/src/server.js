@@ -69,6 +69,8 @@ const productSchema = new mongoose.Schema(
     brandImage: String,
     categoryImage: String,
     description: String,
+    offerText: String,
+    couponCode: String,
     featured: { type: Boolean, default: false }
   },
   { timestamps: true }
@@ -137,10 +139,61 @@ const testimonialSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+const orderSchema = new mongoose.Schema(
+  {
+    orderNumber: { type: String, required: true, unique: true },
+    customerName: String,
+    customerEmail: String,
+    items: [
+      {
+        productId: String,
+        name: String,
+        brand: String,
+        image: String,
+        price: Number,
+        quantity: Number
+      }
+    ],
+    total: { type: Number, default: 0 },
+    status: { type: String, default: "Processing" },
+    source: { type: String, default: "website" }
+  },
+  { timestamps: true }
+);
+
+const couponSchema = new mongoose.Schema(
+  {
+    code: { type: String, required: true, unique: true },
+    title: { type: String, required: true },
+    type: { type: String, enum: ["percent", "flat"], default: "percent" },
+    value: { type: Number, default: 0 },
+    productIds: [String],
+    active: { type: Boolean, default: true },
+    startsAt: Date,
+    endsAt: Date
+  },
+  { timestamps: true }
+);
+
+const visitorSchema = new mongoose.Schema(
+  {
+    visitorId: { type: String, required: true, unique: true },
+    page: String,
+    userAgent: String,
+    lastSeenAt: { type: Date, default: Date.now },
+    firstSeenAt: { type: Date, default: Date.now },
+    visits: { type: Number, default: 1 }
+  },
+  { timestamps: true }
+);
+
 const SiteSettings = mongoose.model("SiteSettings", siteSettingsSchema);
 const Admin = mongoose.model("Admin", adminSchema);
 const Customer = mongoose.model("Customer", customerSchema);
 const Testimonial = mongoose.model("Testimonial", testimonialSchema);
+const Order = mongoose.model("Order", orderSchema);
+const Coupon = mongoose.model("Coupon", couponSchema);
+const Visitor = mongoose.model("Visitor", visitorSchema);
 
 app.use(express.json({ limit: "15mb" }));
 app.use(
@@ -248,6 +301,8 @@ function sanitizeProduct(body) {
     brandImage: String(body.brandImage || "").trim(),
     categoryImage: String(body.categoryImage || "").trim(),
     description: String(body.description || "").trim(),
+    offerText: String(body.offerText || "").trim(),
+    couponCode: String(body.couponCode || "").trim().toUpperCase(),
     featured: Boolean(body.featured)
   };
 }
@@ -319,6 +374,48 @@ function validateTestimonial(testimonial) {
   return "";
 }
 
+function sanitizeCoupon(body) {
+  return {
+    code: String(body.code || "").trim().toUpperCase(),
+    title: String(body.title || "").trim(),
+    type: body.type === "flat" ? "flat" : "percent",
+    value: toNumber(body.value),
+    productIds: compactStrings(body.productIds),
+    active: body.active !== false,
+    startsAt: body.startsAt ? new Date(body.startsAt) : undefined,
+    endsAt: body.endsAt ? new Date(body.endsAt) : undefined
+  };
+}
+
+function validateCoupon(coupon) {
+  const missing = ["code", "title", "value"].filter((key) => !coupon[key]);
+  if (missing.length > 0) return `Missing required coupon fields: ${missing.join(", ")}`;
+  return "";
+}
+
+function sanitizeOrder(body) {
+  const items = Array.isArray(body.items)
+    ? body.items.map((item) => ({
+        productId: String(item.productId || item.id || "").trim(),
+        name: String(item.name || "").trim(),
+        brand: String(item.brand || "").trim(),
+        image: String(item.image || "").trim(),
+        price: toNumber(item.price),
+        quantity: Math.max(1, toNumber(item.quantity, 1))
+      }))
+    : [];
+  const total = body.total ? toNumber(body.total) : items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  return {
+    orderNumber: String(body.orderNumber || body.id || `QADAM-${Math.floor(100000 + Math.random() * 900000)}`).trim(),
+    customerName: String(body.customerName || body.customer?.name || "").trim(),
+    customerEmail: String(body.customerEmail || body.customer?.email || "").trim().toLowerCase(),
+    items,
+    total,
+    status: String(body.status || "Processing").trim(),
+    source: String(body.source || "website").trim()
+  };
+}
+
 app.get("/", (_req, res) => {
   res.json({
     ok: true,
@@ -350,6 +447,8 @@ function shapeProducts(products) {
       brandImage: item.brandImage,
       categoryImage: item.categoryImage,
       description: item.description,
+      offerText: item.offerText,
+      couponCode: item.couponCode,
       featured: item.featured
     };
   });
@@ -365,6 +464,41 @@ function shapeTestimonials(items) {
       quote: testimonial.quote,
       rating: testimonial.rating || 5,
       featured: testimonial.featured !== false
+    };
+  });
+}
+
+function shapeOrders(items) {
+  return items.map((item) => {
+    const order = item.toObject ? item.toObject() : item;
+    return {
+      id: String(order._id || order.orderNumber),
+      orderNumber: order.orderNumber,
+      customerName: order.customerName,
+      customerEmail: order.customerEmail,
+      items: order.items || [],
+      total: order.total || 0,
+      status: order.status || "Processing",
+      source: order.source || "website",
+      createdAt: order.createdAt,
+      date: order.createdAt ? new Date(order.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : ""
+    };
+  });
+}
+
+function shapeCoupons(items) {
+  return items.map((item) => {
+    const coupon = item.toObject ? item.toObject() : item;
+    return {
+      id: String(coupon._id || coupon.code),
+      code: coupon.code,
+      title: coupon.title,
+      type: coupon.type || "percent",
+      value: coupon.value || 0,
+      productIds: coupon.productIds || [],
+      active: coupon.active !== false,
+      startsAt: coupon.startsAt,
+      endsAt: coupon.endsAt
     };
   });
 }
@@ -432,6 +566,16 @@ async function connectMongo() {
   const testimonialCount = await Testimonial.countDocuments();
   if (testimonialCount === 0) {
     await Testimonial.insertMany(seedTestimonials);
+  }
+  const couponCount = await Coupon.countDocuments();
+  if (couponCount === 0) {
+    await Coupon.create({
+      code: "WELCOME10",
+      title: "Welcome discount",
+      type: "percent",
+      value: 10,
+      active: true
+    });
   }
   await ensureDefaultAdmin();
   console.log("MongoDB connected.");
@@ -561,6 +705,50 @@ app.post("/api/customers", async (req, res, next) => {
   }
 });
 
+app.post("/api/visits", async (req, res, next) => {
+  try {
+    if (!mongoReady) {
+      res.json({ ok: true, stored: false });
+      return;
+    }
+    const visitorId = String(req.body.visitorId || "").trim();
+    if (!visitorId) {
+      res.status(400).json({ message: "visitorId is required" });
+      return;
+    }
+    await Visitor.findOneAndUpdate(
+      { visitorId },
+      {
+        $set: {
+          page: String(req.body.page || "").trim(),
+          userAgent: req.get("user-agent") || "",
+          lastSeenAt: new Date()
+        },
+        $setOnInsert: { firstSeenAt: new Date() },
+        $inc: { visits: 1 }
+      },
+      { upsert: true, new: true }
+    );
+    res.json({ ok: true, stored: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/orders", async (req, res, next) => {
+  try {
+    const order = sanitizeOrder(req.body);
+    if (!mongoReady) {
+      res.json({ order, stored: false });
+      return;
+    }
+    const created = await Order.create(order);
+    res.status(201).json({ order: shapeOrders([created])[0], stored: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/api/products/:slug", async (req, res, next) => {
   try {
     const products = await readProducts({});
@@ -616,22 +804,31 @@ app.get("/api/admin/overview", requireAdmin, async (_req, res, next) => {
     const products = mongoReady ? await Product.find({}).lean() : seedProducts;
     const customers = mongoReady ? await Customer.find({}).sort({ updatedAt: -1 }).limit(8).lean() : [];
     const testimonialItems = mongoReady ? await Testimonial.find({}).sort({ updatedAt: -1 }).limit(6).lean() : seedTestimonials;
+    const orderItems = mongoReady ? await Order.find({}).sort({ updatedAt: -1 }).limit(6).lean() : [];
+    const activeSince = new Date(Date.now() - 15 * 60 * 1000);
     const brands = new Set(products.map((product) => product.brand).filter(Boolean));
     const categories = new Set(products.map((product) => product.category).filter(Boolean));
     const totalInventory = products.reduce((sum, product) => sum + Number(product.inventory || 0), 0);
     const inventoryValue = products.reduce((sum, product) => sum + Number(product.inventory || 0) * Number(product.price || 0), 0);
+    const revenue = orderItems.reduce((sum, order) => sum + Number(order.total || 0), 0);
     res.json({
       stats: {
         products: products.length,
         customers: mongoReady ? await Customer.countDocuments() : 0,
+        orders: mongoReady ? await Order.countDocuments() : 0,
+        coupons: mongoReady ? await Coupon.countDocuments() : 0,
+        visitors: mongoReady ? await Visitor.countDocuments() : 0,
+        activeVisitors: mongoReady ? await Visitor.countDocuments({ lastSeenAt: { $gte: activeSince } }) : 0,
         brands: brands.size,
         categories: categories.size,
         featured: products.filter((product) => product.featured).length,
         testimonials: mongoReady ? await Testimonial.countDocuments() : seedTestimonials.length,
+        revenue,
         totalInventory,
         inventoryValue
       },
       recentProducts: shapeProducts(products.slice(0, 6)),
+      recentOrders: shapeOrders(orderItems),
       recentTestimonials: shapeTestimonials(testimonialItems.slice(0, 6)),
       recentCustomers: customers.map((customer) => ({
         id: String(customer._id),
@@ -678,6 +875,68 @@ app.get("/api/admin/customers", requireAdmin, async (_req, res, next) => {
         createdAt: customer.createdAt
       })),
       count: customers.length
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/admin/orders", requireAdmin, async (_req, res, next) => {
+  try {
+    const orders = mongoReady ? await Order.find({}).sort({ updatedAt: -1 }).lean() : [];
+    res.json({ orders: shapeOrders(orders), count: orders.length });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.put("/api/admin/orders/:id/status", requireAdmin, async (req, res, next) => {
+  try {
+    if (!mongoReady) {
+      res.status(503).json({ message: "MongoDB is required for admin order updates" });
+      return;
+    }
+    const updated = await Order.findByIdAndUpdate(req.params.id, { status: String(req.body.status || "Processing").trim() }, { new: true });
+    if (!updated) {
+      res.status(404).json({ message: "Order not found" });
+      return;
+    }
+    res.json({ order: shapeOrders([updated])[0] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/admin/coupons", requireAdmin, async (_req, res, next) => {
+  try {
+    const coupons = mongoReady ? await Coupon.find({}).sort({ updatedAt: -1 }).lean() : [];
+    res.json({ coupons: shapeCoupons(coupons), count: coupons.length });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/admin/visitors", requireAdmin, async (_req, res, next) => {
+  try {
+    if (!mongoReady) {
+      res.json({ visitors: [], stats: { total: 0, active: 0, inactive: 0 } });
+      return;
+    }
+    const activeSince = new Date(Date.now() - 15 * 60 * 1000);
+    const visitors = await Visitor.find({}).sort({ lastSeenAt: -1 }).limit(100).lean();
+    const total = await Visitor.countDocuments();
+    const active = await Visitor.countDocuments({ lastSeenAt: { $gte: activeSince } });
+    res.json({
+      visitors: visitors.map((visitor) => ({
+        id: String(visitor._id),
+        visitorId: visitor.visitorId,
+        page: visitor.page,
+        visits: visitor.visits,
+        firstSeenAt: visitor.firstSeenAt,
+        lastSeenAt: visitor.lastSeenAt,
+        active: visitor.lastSeenAt >= activeSince
+      })),
+      stats: { total, active, inactive: Math.max(0, total - active) }
     });
   } catch (error) {
     next(error);
@@ -735,6 +994,65 @@ app.delete("/api/admin/products/:id", requireAdmin, async (req, res, next) => {
     const deleted = await Product.findByIdAndDelete(req.params.id);
     if (!deleted) {
       res.status(404).json({ message: "Product not found" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/admin/coupons", requireAdmin, async (req, res, next) => {
+  try {
+    if (!mongoReady) {
+      res.status(503).json({ message: "MongoDB is required for admin coupon updates" });
+      return;
+    }
+    const coupon = sanitizeCoupon(req.body);
+    const message = validateCoupon(coupon);
+    if (message) {
+      res.status(400).json({ message });
+      return;
+    }
+    const created = await Coupon.create(coupon);
+    res.status(201).json({ coupon: shapeCoupons([created])[0] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.put("/api/admin/coupons/:id", requireAdmin, async (req, res, next) => {
+  try {
+    if (!mongoReady) {
+      res.status(503).json({ message: "MongoDB is required for admin coupon updates" });
+      return;
+    }
+    const coupon = sanitizeCoupon(req.body);
+    const message = validateCoupon(coupon);
+    if (message) {
+      res.status(400).json({ message });
+      return;
+    }
+    const updated = await Coupon.findByIdAndUpdate(req.params.id, coupon, { new: true, runValidators: true });
+    if (!updated) {
+      res.status(404).json({ message: "Coupon not found" });
+      return;
+    }
+    res.json({ coupon: shapeCoupons([updated])[0] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/admin/coupons/:id", requireAdmin, async (req, res, next) => {
+  try {
+    if (!mongoReady) {
+      res.status(503).json({ message: "MongoDB is required for admin coupon updates" });
+      return;
+    }
+    const deleted = await Coupon.findByIdAndDelete(req.params.id);
+    if (!deleted) {
+      res.status(404).json({ message: "Coupon not found" });
       return;
     }
     res.json({ ok: true });

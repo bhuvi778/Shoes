@@ -69,6 +69,12 @@ export default function ProductDetailPage({
             <strong>{inr(product.price)}</strong>
             {product.oldPrice ? <span>{inr(product.oldPrice)}</span> : null}
           </div>
+          {(product.offerText || product.couponCode) && (
+            <div className="detail-offer">
+              <strong>{product.offerText || "Product offer"}</strong>
+              {product.couponCode && <span>Use code {product.couponCode}</span>}
+            </div>
+          )}
           <p className="detail-description">{product.description}</p>
 
           <div className="detail-panel">

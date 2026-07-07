@@ -99,6 +99,26 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (isAdminPortal) return undefined;
+    const key = "qadam_visitor_id";
+    const existing = localStorage.getItem(key);
+    const visitorId = existing || `visitor-${Math.random().toString(36).slice(2)}-${Date.now()}`;
+    if (!existing) localStorage.setItem(key, visitorId);
+
+    function pingVisit() {
+      fetch(apiPath("/api/visits"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ visitorId, page: window.location.pathname || "/" })
+      }).catch((error) => console.error(error));
+    }
+
+    pingVisit();
+    const timer = window.setInterval(pingVisit, 60000);
+    return () => window.clearInterval(timer);
+  }, [isAdminPortal]);
+
+  useEffect(() => {
     const controller = new AbortController();
     setStatus("loading");
 
@@ -275,6 +295,16 @@ export default function App() {
       total,
       status: "Processing"
     };
+    fetch(apiPath("/api/orders"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...order,
+        orderNumber: order.id,
+        customerName: buyer.name,
+        customerEmail: buyer.email
+      })
+    }).catch((error) => console.error(error));
     setOrders((current) => [order, ...current]);
     setCartItems([]);
     setCartOpen(false);

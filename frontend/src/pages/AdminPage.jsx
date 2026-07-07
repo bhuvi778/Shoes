@@ -1,8 +1,11 @@
 import {
+  Activity,
   BarChart3,
   Boxes,
   ChevronLeft,
   ChevronRight,
+  ClipboardList,
+  ExternalLink,
   Grid3X3,
   Image,
   LayoutDashboard,
@@ -10,11 +13,13 @@ import {
   LogOut,
   MessageSquare,
   PackagePlus,
+  Percent,
   Plus,
   Save,
   ShoppingBag,
   Star,
   Store,
+  Tag,
   Trash2,
   Users,
   Video,
@@ -43,6 +48,8 @@ const emptyProduct = {
   brandImage: "",
   categoryImage: "",
   description: "",
+  offerText: "",
+  couponCode: "",
   featured: false
 };
 
@@ -53,6 +60,16 @@ const emptyTestimonial = {
   quote: "",
   rating: 5,
   featured: true
+};
+
+const emptyCoupon = {
+  id: "",
+  code: "",
+  title: "",
+  type: "percent",
+  value: "",
+  productIdsText: "",
+  active: true
 };
 
 const defaultSettings = {
@@ -78,6 +95,9 @@ const navItems = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "storefront", label: "Storefront", icon: Store },
   { id: "products", label: "Products", icon: ShoppingBag },
+  { id: "orders", label: "Orders", icon: ClipboardList },
+  { id: "coupons", label: "Coupons", icon: Tag },
+  { id: "visitors", label: "Visitors", icon: Activity },
   { id: "reviews", label: "Reviews", icon: MessageSquare },
   { id: "customers", label: "Customers", icon: Users }
 ];
@@ -123,6 +143,26 @@ function fromFormProduct(product) {
   };
 }
 
+function toCouponForm(coupon) {
+  return {
+    ...emptyCoupon,
+    ...coupon,
+    value: coupon.value || "",
+    productIdsText: (coupon.productIds || []).join("\n")
+  };
+}
+
+function fromCouponForm(coupon) {
+  return {
+    ...coupon,
+    value: Number(coupon.value),
+    productIds: coupon.productIdsText
+      .split(/\r?\n/)
+      .map((value) => value.trim())
+      .filter(Boolean)
+  };
+}
+
 export default function AdminPage({ onDataChanged }) {
   const [token, setToken] = useState(() => localStorage.getItem("qadam_admin_token") || "");
   const [login, setLogin] = useState({ email: "admin@qadam.store", password: "" });
@@ -131,8 +171,13 @@ export default function AdminPage({ onDataChanged }) {
   const [products, setProducts] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [testimonials, setTestimonials] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [coupons, setCoupons] = useState([]);
+  const [visitors, setVisitors] = useState([]);
+  const [visitorStats, setVisitorStats] = useState({ total: 0, active: 0, inactive: 0 });
   const [productForm, setProductForm] = useState(emptyProduct);
   const [testimonialForm, setTestimonialForm] = useState(emptyTestimonial);
+  const [couponForm, setCouponForm] = useState(emptyCoupon);
   const [settings, setSettings] = useState(defaultSettings);
   const [productModalOpen, setProductModalOpen] = useState(false);
   const [productView, setProductView] = useState("card");
@@ -143,6 +188,7 @@ export default function AdminPage({ onDataChanged }) {
 
   const selectedProduct = useMemo(() => products.find((product) => product.id === productForm.id), [productForm.id, products]);
   const selectedTestimonial = useMemo(() => testimonials.find((item) => item.id === testimonialForm.id), [testimonialForm.id, testimonials]);
+  const selectedCoupon = useMemo(() => coupons.find((coupon) => coupon.id === couponForm.id), [couponForm.id, coupons]);
   const filteredProducts = useMemo(() => {
     const search = productSearch.trim().toLowerCase();
     if (!search) return products;
@@ -179,18 +225,25 @@ export default function AdminPage({ onDataChanged }) {
   async function loadAdminData(nextToken = token) {
     setLoading(true);
     try {
-      const [overviewData, productData, settingsData, customerData, testimonialData] = await Promise.all([
+      const [overviewData, productData, settingsData, customerData, testimonialData, orderData, couponData, visitorData] = await Promise.all([
         adminFetch("/api/admin/overview", {}, nextToken),
         adminFetch("/api/admin/products", {}, nextToken),
         adminFetch("/api/admin/settings", {}, nextToken),
         adminFetch("/api/admin/customers", {}, nextToken),
-        adminFetch("/api/admin/testimonials", {}, nextToken)
+        adminFetch("/api/admin/testimonials", {}, nextToken),
+        adminFetch("/api/admin/orders", {}, nextToken),
+        adminFetch("/api/admin/coupons", {}, nextToken),
+        adminFetch("/api/admin/visitors", {}, nextToken)
       ]);
       setOverview(overviewData);
       setProducts(productData.products || []);
       setSettings(settingsData.settings || defaultSettings);
       setCustomers(customerData.customers || []);
       setTestimonials(testimonialData.testimonials || []);
+      setOrders(orderData.orders || []);
+      setCoupons(couponData.coupons || []);
+      setVisitors(visitorData.visitors || []);
+      setVisitorStats(visitorData.stats || { total: 0, active: 0, inactive: 0 });
       setMessage("Dashboard data synced.");
     } catch (error) {
       setMessage(error.message);
@@ -228,9 +281,14 @@ export default function AdminPage({ onDataChanged }) {
     setProducts([]);
     setCustomers([]);
     setTestimonials([]);
+    setOrders([]);
+    setCoupons([]);
+    setVisitors([]);
+    setVisitorStats({ total: 0, active: 0, inactive: 0 });
     setOverview(null);
     setProductForm(emptyProduct);
     setTestimonialForm(emptyTestimonial);
+    setCouponForm(emptyCoupon);
     setProductModalOpen(false);
   }
 
@@ -449,14 +507,63 @@ export default function AdminPage({ onDataChanged }) {
     }
   }
 
+  async function saveCoupon(event) {
+    event.preventDefault();
+    setLoading(true);
+    try {
+      const path = couponForm.id ? `/api/admin/coupons/${couponForm.id}` : "/api/admin/coupons";
+      const method = couponForm.id ? "PUT" : "POST";
+      await adminFetch(path, { method, body: JSON.stringify(fromCouponForm(couponForm)) });
+      setMessage(couponForm.id ? "Coupon updated." : "Coupon created.");
+      setCouponForm(emptyCoupon);
+      await loadAdminData();
+      onDataChanged?.();
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function deleteCoupon(id) {
+    if (!window.confirm("Delete this coupon?")) return;
+    setLoading(true);
+    try {
+      await adminFetch(`/api/admin/coupons/${id}`, { method: "DELETE" });
+      setMessage("Coupon deleted.");
+      setCouponForm(emptyCoupon);
+      await loadAdminData();
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function updateOrderStatus(id, status) {
+    setLoading(true);
+    try {
+      await adminFetch(`/api/admin/orders/${id}/status`, { method: "PUT", body: JSON.stringify({ status }) });
+      setMessage("Order status updated.");
+      await loadAdminData();
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function renderOverview() {
     const stats = overview?.stats || {};
     const cards = [
       { label: "Products", value: stats.products || 0, icon: ShoppingBag },
+      { label: "Orders", value: stats.orders || orders.length || 0, icon: ClipboardList },
       { label: "Customers", value: stats.customers || 0, icon: Users },
-      { label: "Brands", value: stats.brands || 0, icon: Boxes },
+      { label: "Active visitors", value: stats.activeVisitors || visitorStats.active || 0, icon: Activity },
+      { label: "Coupons", value: stats.coupons || coupons.length || 0, icon: Tag },
       { label: "Reviews", value: stats.testimonials || testimonials.length || 0, icon: MessageSquare },
-      { label: "Inventory value", value: inr(stats.inventoryValue || 0), icon: BarChart3 }
+      { label: "Revenue", value: inr(stats.revenue || 0), icon: BarChart3 },
+      { label: "Brands", value: stats.brands || 0, icon: Boxes }
     ];
 
     return (
@@ -720,6 +827,7 @@ export default function AdminPage({ onDataChanged }) {
                     <span>{product.brand} | {product.category}</span>
                     <strong>{product.name}</strong>
                     <small>{inr(product.price)} | Stock {product.inventory}</small>
+                    {(product.offerText || product.couponCode) && <em>{product.offerText || product.couponCode}</em>}
                   </div>
                   <div className="admin-product-card-actions">
                     <button className="dash-ghost" type="button" onClick={() => openProductModal(product)}>
@@ -740,6 +848,7 @@ export default function AdminPage({ onDataChanged }) {
                   <div>
                     <strong>{product.name}</strong>
                     <span>{product.brand} | {product.category} | {inr(product.price)} | Stock {product.inventory}</span>
+                    {(product.offerText || product.couponCode) && <span>{product.offerText || "Coupon"}: {product.couponCode}</span>}
                   </div>
                   <button className="dash-ghost" type="button" onClick={() => openProductModal(product)}>
                     Edit
@@ -825,6 +934,16 @@ export default function AdminPage({ onDataChanged }) {
                 <label className="admin-check">
                   <input type="checkbox" checked={productForm.featured} onChange={(event) => setProductForm((current) => ({ ...current, featured: event.target.checked }))} />
                   <span>Featured</span>
+                </label>
+              </div>
+              <div className="admin-two">
+                <label>
+                  <span>Offer text</span>
+                  <input value={productForm.offerText} placeholder="Flat 20% off, festive deal..." onChange={(event) => setProductForm((current) => ({ ...current, offerText: event.target.value }))} />
+                </label>
+                <label>
+                  <span>Product coupon code</span>
+                  <input value={productForm.couponCode} placeholder="WELCOME10" onChange={(event) => setProductForm((current) => ({ ...current, couponCode: event.target.value.toUpperCase() }))} />
                 </label>
               </div>
               <label>
@@ -972,6 +1091,148 @@ export default function AdminPage({ onDataChanged }) {
     );
   }
 
+  function renderOrders() {
+    return (
+      <section className="admin-card">
+        <div className="admin-section-toolbar">
+          <div className="admin-card-title">
+            <ClipboardList />
+            <h2>Orders</h2>
+          </div>
+          <span className="admin-subtle">{orders.length} orders captured from checkout</span>
+        </div>
+        <div className="admin-order-list">
+          {orders.map((order) => (
+            <article className="admin-order-row" key={order.id || order.orderNumber}>
+              <div>
+                <strong>{order.orderNumber}</strong>
+                <span>{order.customerName || "Guest"} | {order.customerEmail || "No email"} | {order.date || "No date"}</span>
+                <small>{order.items?.length || 0} items | {inr(order.total || 0)}</small>
+              </div>
+              <select value={order.status || "Processing"} onChange={(event) => updateOrderStatus(order.id, event.target.value)}>
+                {["Processing", "Confirmed", "Packed", "Shipped", "Delivered", "Cancelled"].map((status) => (
+                  <option value={status} key={status}>{status}</option>
+                ))}
+              </select>
+            </article>
+          ))}
+          {orders.length === 0 && <p className="admin-empty">No orders yet. New customer checkouts will appear here after MongoDB is connected.</p>}
+        </div>
+      </section>
+    );
+  }
+
+  function renderCoupons() {
+    return (
+      <section className="admin-review-workspace">
+        <form className="admin-card admin-form" onSubmit={saveCoupon}>
+          <div className="admin-card-title">
+            <Tag />
+            <h2>{selectedCoupon ? "Edit coupon" : "Create coupon"}</h2>
+          </div>
+          <div className="admin-two">
+            <label>
+              <span>Coupon code</span>
+              <input value={couponForm.code} onChange={(event) => setCouponForm((current) => ({ ...current, code: event.target.value.toUpperCase() }))} placeholder="WELCOME10" />
+            </label>
+            <label>
+              <span>Title</span>
+              <input value={couponForm.title} onChange={(event) => setCouponForm((current) => ({ ...current, title: event.target.value }))} placeholder="Welcome discount" />
+            </label>
+          </div>
+          <div className="admin-three">
+            <label>
+              <span>Type</span>
+              <select value={couponForm.type} onChange={(event) => setCouponForm((current) => ({ ...current, type: event.target.value }))}>
+                <option value="percent">Percent</option>
+                <option value="flat">Flat amount</option>
+              </select>
+            </label>
+            <label>
+              <span>Value</span>
+              <input type="number" value={couponForm.value} onChange={(event) => setCouponForm((current) => ({ ...current, value: event.target.value }))} />
+            </label>
+            <label className="admin-check">
+              <input type="checkbox" checked={couponForm.active} onChange={(event) => setCouponForm((current) => ({ ...current, active: event.target.checked }))} />
+              <span>Active</span>
+            </label>
+          </div>
+          <label>
+            <span>Product IDs one per line optional</span>
+            <textarea value={couponForm.productIdsText} onChange={(event) => setCouponForm((current) => ({ ...current, productIdsText: event.target.value }))} placeholder="Paste product ids for product-specific coupons" />
+          </label>
+          <div className="admin-actions">
+            <button className="checkout-button" type="submit" disabled={loading}>
+              <Save />
+              Save Coupon
+            </button>
+            <button className="dash-ghost" type="button" onClick={() => setCouponForm(emptyCoupon)}>
+              <Plus />
+              New
+            </button>
+          </div>
+        </form>
+
+        <section className="admin-card">
+          <div className="admin-card-title">
+            <Percent />
+            <h2>Active offers</h2>
+          </div>
+          <div className="admin-review-list">
+            {coupons.map((coupon) => (
+              <article className="admin-review-row" key={coupon.id || coupon.code}>
+                <div>
+                  <strong>{coupon.code}</strong>
+                  <span>{coupon.title} | {coupon.type === "flat" ? inr(coupon.value) : `${coupon.value}%`} | {coupon.active ? "Active" : "Inactive"}</span>
+                  <p>{coupon.productIds?.length ? `${coupon.productIds.length} product-specific assignments` : "Applies globally unless product IDs are added."}</p>
+                </div>
+                <button className="dash-ghost" type="button" onClick={() => setCouponForm(toCouponForm(coupon))}>
+                  Edit
+                </button>
+                <button className="icon-button admin-delete" type="button" onClick={() => deleteCoupon(coupon.id)} aria-label={`Delete ${coupon.code}`}>
+                  <Trash2 />
+                </button>
+              </article>
+            ))}
+            {coupons.length === 0 && <p className="admin-empty">No coupons yet.</p>}
+          </div>
+        </section>
+      </section>
+    );
+  }
+
+  function renderVisitors() {
+    return (
+      <section className="admin-card">
+        <div className="admin-section-toolbar">
+          <div className="admin-card-title">
+            <Activity />
+            <h2>Visitors</h2>
+          </div>
+          <span className="admin-subtle">{visitorStats.active} active, {visitorStats.inactive} inactive</span>
+        </div>
+        <section className="admin-product-summary">
+          <article><strong>{visitorStats.total}</strong><span>Total visitors</span></article>
+          <article><strong>{visitorStats.active}</strong><span>Active now</span></article>
+          <article><strong>{visitorStats.inactive}</strong><span>Inactive</span></article>
+          <article><strong>{visitors.reduce((sum, visitor) => sum + Number(visitor.visits || 0), 0)}</strong><span>Total visits</span></article>
+        </section>
+        <div className="admin-order-list">
+          {visitors.map((visitor) => (
+            <article className="admin-order-row" key={visitor.id || visitor.visitorId}>
+              <div>
+                <strong>{visitor.visitorId}</strong>
+                <span>{visitor.page || "/"} | {visitor.active ? "Active" : "Inactive"}</span>
+                <small>{visitor.visits} visits | Last seen {visitor.lastSeenAt ? new Date(visitor.lastSeenAt).toLocaleString("en-IN") : "unknown"}</small>
+              </div>
+            </article>
+          ))}
+          {visitors.length === 0 && <p className="admin-empty">No visitor data yet. Storefront visits will appear here after MongoDB is connected.</p>}
+        </div>
+      </section>
+    );
+  }
+
   function renderCustomers() {
     return (
       <section className="admin-card">
@@ -999,6 +1260,9 @@ export default function AdminPage({ onDataChanged }) {
   function renderSection() {
     if (section === "storefront") return renderStorefront();
     if (section === "products") return renderProducts();
+    if (section === "orders") return renderOrders();
+    if (section === "coupons") return renderCoupons();
+    if (section === "visitors") return renderVisitors();
     if (section === "reviews") return renderReviews();
     if (section === "customers") return renderCustomers();
     return renderOverview();
@@ -1051,6 +1315,10 @@ export default function AdminPage({ onDataChanged }) {
             );
           })}
         </nav>
+        <a className="admin-storefront-link" href="/" target="_blank" rel="noreferrer">
+          <ExternalLink />
+          View storefront
+        </a>
         <button className="admin-logout" type="button" onClick={logout}>
           <LogOut />
           Logout
@@ -1064,9 +1332,6 @@ export default function AdminPage({ onDataChanged }) {
             <h1>{navItems.find((item) => item.id === section)?.label || "Overview"}</h1>
           </div>
           <div className="admin-top-actions">
-            <a className="dash-ghost" href="/" target="_blank" rel="noreferrer">
-              View storefront
-            </a>
             <button className="dash-ghost" type="button" onClick={() => loadAdminData()}>
               Refresh
             </button>
