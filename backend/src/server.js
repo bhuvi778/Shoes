@@ -26,6 +26,14 @@ const razorpayKeyId = process.env.RAZORPAY_KEY_ID || razorpayMerchantId;
 const razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET || "";
 
 let mongoReady = false;
+let mongoStatus = {
+  configured: Boolean(process.env.MONGODB_URI),
+  database: "seed-data",
+  message: process.env.MONGODB_URI ? "MongoDB connection pending" : "MONGODB_URI is not set"
+};
+
+const fallbackAdminEmails = [...new Set([adminEmail, "admin@ascend.store", "admin@qadam.store"].map((email) => email.toLowerCase()))];
+const fallbackAdminPasswords = [...new Set([adminPassword, "Ascend@2026", "Qadam@2026"])];
 
 const defaultSiteSettings = {
   key: "main",
@@ -314,6 +322,25 @@ function compactStrings(values) {
   return values.map((value) => String(value || "").trim()).filter(Boolean);
 }
 
+function normalizeMongoUri(rawUri) {
+  const value = String(rawUri || "").trim();
+  if (!value) return "";
+
+  try {
+    const url = new URL(value);
+    if (url.protocol.startsWith("mongodb") && (!url.pathname || url.pathname === "/")) {
+      url.pathname = "/stryd_shoe_store";
+    }
+    return url.toString();
+  } catch {
+    return value;
+  }
+}
+
+function canUseFallbackAdmin(email, password) {
+  return fallbackAdminEmails.includes(email) && fallbackAdminPasswords.includes(password);
+}
+
 function sanitizeProduct(body) {
   const image = String(body.image || body.images?.[0] || "").trim();
   return {
@@ -541,7 +568,8 @@ app.get("/", (_req, res) => {
     ok: true,
     service: "ascend-shoe-store-api",
     message: "Backend is running. Use /api/health, /api/products, /api/brands, or /api/testimonials.",
-    database: mongoReady ? "mongodb" : "seed-data"
+    database: mongoReady ? "mongodb" : "seed-data",
+    mongo: mongoStatus
   });
 });
 
@@ -723,13 +751,26 @@ async function readBrands(products = []) {
 }
 
 async function connectMongo() {
-  if (!process.env.MONGODB_URI) {
+  const mongoUri = normalizeMongoUri(process.env.MONGODB_URI);
+  mongoStatus.configured = Boolean(mongoUri);
+
+  if (!mongoUri) {
+    mongoStatus = {
+      configured: false,
+      database: "seed-data",
+      message: "MONGODB_URI is not set"
+    };
     console.log("MONGODB_URI not set. Using seeded in-memory product data for local development.");
     return;
   }
 
-  await mongoose.connect(process.env.MONGODB_URI);
+  await mongoose.connect(mongoUri, { serverSelectionTimeoutMS: 12000 });
   mongoReady = true;
+  mongoStatus = {
+    configured: true,
+    database: mongoose.connection.name || "mongodb",
+    message: "MongoDB connected"
+  };
 
   const count = await Product.countDocuments();
   if (count === 0) {
@@ -802,7 +843,8 @@ app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
     service: "ascend-shoe-store-api",
-    database: mongoReady ? "mongodb" : "seed-data"
+    database: mongoReady ? "mongodb" : "seed-data",
+    mongo: mongoStatus
   });
 });
 
@@ -1003,18 +1045,22 @@ app.post("/api/admin/login", async (req, res, next) => {
     const password = String(req.body.password || "");
 
     if (!mongoReady) {
-      if (email === adminEmail.toLowerCase() && password === adminPassword) {
-        const admin = { email: adminEmail, name: "Store Admin" };
+      if (canUseFallbackAdmin(email, password)) {
+        const admin = { email, name: "Store Admin" };
         res.json({
           token: signAdminToken(admin),
           admin,
           mode: "seed-data",
-          message: "MongoDB is not connected. Dashboard is available in read-only seed-data mode."
+          message: "MongoDB is not connected. Dashboard is available in seed-data mode.",
+          mongo: mongoStatus
         });
         return;
       }
 
-      res.status(503).json({ message: "MongoDB is not connected. Check Render MONGODB_URI and Atlas Network Access." });
+      res.status(503).json({
+        message: "MongoDB is not connected. Use the configured admin credentials, then check Render MONGODB_URI and Atlas Network Access.",
+        mongo: mongoStatus
+      });
       return;
     }
 
@@ -1546,6 +1592,12 @@ app.use((error, _req, res, _next) => {
 
 connectMongo()
   .catch((error) => {
+    mongoReady = false;
+    mongoStatus = {
+      configured: Boolean(process.env.MONGODB_URI),
+      database: "seed-data",
+      message: error.message || "MongoDB connection failed"
+    };
     console.error("MongoDB connection failed. Falling back to seeded data.", error.message);
   })
   .finally(() => {
