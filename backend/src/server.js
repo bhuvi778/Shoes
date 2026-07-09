@@ -26,7 +26,6 @@ const razorpayKeyId = process.env.RAZORPAY_KEY_ID || razorpayMerchantId;
 const razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET || "";
 
 let mongoReady = false;
-let memoryProducts = seedProducts.map((product) => ({ ...product }));
 let mongoStatus = {
   configured: Boolean(process.env.MONGODB_URI),
   database: "seed-data",
@@ -62,6 +61,32 @@ const defaultSiteSettings = {
     panel: "#202020"
   }
 };
+
+function cloneData(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function memoryId(value) {
+  return String(value || "item")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "") || `item-${Date.now()}`;
+}
+
+let memoryProducts = seedProducts.map((product) => ({ ...product }));
+let memorySettings = cloneData(defaultSiteSettings);
+let memoryTestimonials = seedTestimonials.map((testimonial) => ({ ...testimonial, _id: memoryId(testimonial.name) }));
+let memoryCoupons = [];
+let memoryCustomers = [];
+let memoryOrders = [];
+let memoryVisitors = [];
+let memoryCategories = [...new Set(seedProducts.map((product) => product.category).filter(Boolean))]
+  .sort()
+  .map((name) => ({ _id: memoryId(name), name, image: "", description: "", active: true }));
+let memoryBrands = [...new Set(seedProducts.map((product) => product.brand).filter(Boolean))]
+  .sort()
+  .map((name) => ({ _id: memoryId(name), name, image: "", description: "", active: true }));
 
 const productSchema = new mongoose.Schema(
   {
@@ -608,6 +633,25 @@ function findMemoryProductIndex(id) {
   return memoryProducts.findIndex((product) => String(product._id || product.id || product.slug) === value || product.slug === value);
 }
 
+function findMemoryIndex(items, id, key = "name") {
+  const value = String(id || "").trim();
+  return items.findIndex((item) => String(item._id || item.id || item[key]) === value || String(item[key] || "") === value);
+}
+
+function mergeMemoryNamedRecords(records, products, productKey, includeInactive = false) {
+  const byName = new Map(records.map((record) => [record.name, { ...record }]));
+  products.forEach((product) => {
+    const name = product[productKey];
+    if (name && !byName.has(name)) {
+      byName.set(name, { _id: memoryId(name), name, image: "", description: "", active: true });
+    }
+  });
+
+  return [...byName.values()]
+    .filter((record) => includeInactive || record.active !== false)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 function shapeCategories(categories, products = []) {
   return categories.map((category) => {
     const item = category.toObject ? category.toObject() : category;
@@ -724,7 +768,7 @@ function applyFilters(products, query) {
 }
 
 async function readTestimonials() {
-  if (!mongoReady) return shapeTestimonials(seedTestimonials);
+  if (!mongoReady) return shapeTestimonials(memoryTestimonials.filter((item) => item.featured !== false));
   const items = await Testimonial.find({ featured: { $ne: false } }).sort({ updatedAt: -1 }).lean();
   return shapeTestimonials(items);
 }
@@ -738,21 +782,21 @@ async function readProducts(query) {
   return applyFilters(shapeProducts(products), query);
 }
 
-async function readCategories(products = []) {
+async function readCategories(products = [], includeInactive = false) {
   if (!mongoReady) {
-    const names = [...new Set(products.map((product) => product.category).filter(Boolean))].sort();
-    return shapeCategories(names.map((name) => ({ name, active: true })), products);
+    return shapeCategories(mergeMemoryNamedRecords(memoryCategories, products, "category", includeInactive), products);
   }
-  const categories = await Category.find({ active: { $ne: false } }).sort({ name: 1 }).lean();
+  const query = includeInactive ? {} : { active: { $ne: false } };
+  const categories = await Category.find(query).sort({ name: 1 }).lean();
   return shapeCategories(categories, products);
 }
 
-async function readBrands(products = []) {
+async function readBrands(products = [], includeInactive = false) {
   if (!mongoReady) {
-    const names = [...new Set(products.map((product) => product.brand).filter(Boolean))].sort();
-    return shapeBrands(names.map((name) => ({ name, active: true })), products);
+    return shapeBrands(mergeMemoryNamedRecords(memoryBrands, products, "brand", includeInactive), products);
   }
-  const brands = await Brand.find({ active: { $ne: false } }).sort({ name: 1 }).lean();
+  const query = includeInactive ? {} : { active: { $ne: false } };
+  const brands = await Brand.find(query).sort({ name: 1 }).lean();
   return shapeBrands(brands, products);
 }
 
@@ -857,7 +901,7 @@ app.get("/api/health", (_req, res) => {
 app.get("/api/settings", async (_req, res, next) => {
   try {
     if (!mongoReady) {
-      res.json({ settings: defaultSiteSettings });
+      res.json({ settings: memorySettings });
       return;
     }
     const settings = await SiteSettings.findOne({ key: "main" }).lean();
@@ -907,23 +951,30 @@ app.get("/api/testimonials", async (_req, res, next) => {
 
 app.post("/api/customers", async (req, res, next) => {
   try {
-    if (!mongoReady) {
-      res.json({
-        customer: {
-          name: req.body.name,
-          email: req.body.email,
-          joined: req.body.joined
-        },
-        stored: false
-      });
-      return;
-    }
-
     const name = String(req.body.name || "").trim();
     const email = String(req.body.email || "").trim().toLowerCase();
     const joined = String(req.body.joined || "").trim();
     if (!name || !email) {
       res.status(400).json({ message: "Name and email are required" });
+      return;
+    }
+
+    if (!mongoReady) {
+      const existingIndex = memoryCustomers.findIndex((customer) => customer.email === email);
+      const customer = {
+        _id: existingIndex === -1 ? memoryId(email) : memoryCustomers[existingIndex]._id,
+        name,
+        email,
+        joined,
+        lastSeenAt: new Date(),
+        createdAt: existingIndex === -1 ? new Date() : memoryCustomers[existingIndex].createdAt
+      };
+      if (existingIndex === -1) {
+        memoryCustomers = [customer, ...memoryCustomers];
+      } else {
+        memoryCustomers = memoryCustomers.map((item, index) => (index === existingIndex ? customer : item));
+      }
+      res.json({ customer, stored: false, mode: "seed-data" });
       return;
     }
 
@@ -940,15 +991,33 @@ app.post("/api/customers", async (req, res, next) => {
 
 app.post("/api/visits", async (req, res, next) => {
   try {
-    if (!mongoReady) {
-      res.json({ ok: true, stored: false });
-      return;
-    }
     const visitorId = String(req.body.visitorId || "").trim();
     if (!visitorId) {
       res.status(400).json({ message: "visitorId is required" });
       return;
     }
+
+    if (!mongoReady) {
+      const existingIndex = memoryVisitors.findIndex((visitor) => visitor.visitorId === visitorId);
+      const now = new Date();
+      const visitor = {
+        _id: existingIndex === -1 ? memoryId(visitorId) : memoryVisitors[existingIndex]._id,
+        visitorId,
+        page: String(req.body.page || "").trim(),
+        userAgent: req.get("user-agent") || "",
+        firstSeenAt: existingIndex === -1 ? now : memoryVisitors[existingIndex].firstSeenAt,
+        lastSeenAt: now,
+        visits: (existingIndex === -1 ? 0 : Number(memoryVisitors[existingIndex].visits || 0)) + 1
+      };
+      if (existingIndex === -1) {
+        memoryVisitors = [visitor, ...memoryVisitors];
+      } else {
+        memoryVisitors = memoryVisitors.map((item, index) => (index === existingIndex ? visitor : item));
+      }
+      res.json({ ok: true, stored: false, mode: "seed-data" });
+      return;
+    }
+
     await Visitor.findOneAndUpdate(
       { visitorId },
       {
@@ -1021,7 +1090,9 @@ app.post("/api/orders", async (req, res, next) => {
       order.payment.status = "paid";
     }
     if (!mongoReady) {
-      res.json({ order, stored: false });
+      const created = { ...order, _id: order.orderNumber, createdAt: new Date(), updatedAt: new Date() };
+      memoryOrders = [created, ...memoryOrders];
+      res.status(201).json({ order: shapeOrders([created])[0], stored: false, mode: "seed-data" });
       return;
     }
     const created = await Order.create(order);
@@ -1088,27 +1159,31 @@ app.post("/api/admin/login", async (req, res, next) => {
 app.get("/api/admin/overview", requireAdmin, async (_req, res, next) => {
   try {
     const products = mongoReady ? await Product.find({}).lean() : memoryProducts;
-    const customers = mongoReady ? await Customer.find({}).sort({ updatedAt: -1 }).limit(8).lean() : [];
-    const testimonialItems = mongoReady ? await Testimonial.find({}).sort({ updatedAt: -1 }).limit(6).lean() : seedTestimonials;
-    const orderItems = mongoReady ? await Order.find({}).sort({ updatedAt: -1 }).limit(6).lean() : [];
+    const customers = mongoReady ? await Customer.find({}).sort({ updatedAt: -1 }).limit(8).lean() : memoryCustomers.slice(0, 8);
+    const testimonialItems = mongoReady ? await Testimonial.find({}).sort({ updatedAt: -1 }).limit(6).lean() : memoryTestimonials.slice(0, 6);
+    const orderItems = mongoReady ? await Order.find({}).sort({ updatedAt: -1 }).limit(6).lean() : memoryOrders.slice(0, 6);
     const activeSince = new Date(Date.now() - 15 * 60 * 1000);
-    const brands = mongoReady ? await Brand.countDocuments({ active: { $ne: false } }) : new Set(products.map((product) => product.brand).filter(Boolean)).size;
-    const categories = mongoReady ? await Category.countDocuments({ active: { $ne: false } }) : new Set(products.map((product) => product.category).filter(Boolean)).size;
+    const brands = mongoReady
+      ? await Brand.countDocuments({ active: { $ne: false } })
+      : mergeMemoryNamedRecords(memoryBrands, shapeProducts(products), "brand").length;
+    const categories = mongoReady
+      ? await Category.countDocuments({ active: { $ne: false } })
+      : mergeMemoryNamedRecords(memoryCategories, shapeProducts(products), "category").length;
     const totalInventory = products.reduce((sum, product) => sum + Number(product.inventory || 0), 0);
     const inventoryValue = products.reduce((sum, product) => sum + Number(product.inventory || 0) * Number(product.price || 0), 0);
     const revenue = orderItems.reduce((sum, order) => sum + Number(order.total || 0), 0);
     res.json({
       stats: {
         products: products.length,
-        customers: mongoReady ? await Customer.countDocuments() : 0,
-        orders: mongoReady ? await Order.countDocuments() : 0,
-        coupons: mongoReady ? await Coupon.countDocuments() : 0,
-        visitors: mongoReady ? await Visitor.countDocuments() : 0,
-        activeVisitors: mongoReady ? await Visitor.countDocuments({ lastSeenAt: { $gte: activeSince } }) : 0,
+        customers: mongoReady ? await Customer.countDocuments() : memoryCustomers.length,
+        orders: mongoReady ? await Order.countDocuments() : memoryOrders.length,
+        coupons: mongoReady ? await Coupon.countDocuments() : memoryCoupons.length,
+        visitors: mongoReady ? await Visitor.countDocuments() : memoryVisitors.length,
+        activeVisitors: mongoReady ? await Visitor.countDocuments({ lastSeenAt: { $gte: activeSince } }) : memoryVisitors.filter((visitor) => visitor.lastSeenAt >= activeSince).length,
         brands,
         categories,
         featured: products.filter((product) => product.featured).length,
-        testimonials: mongoReady ? await Testimonial.countDocuments() : seedTestimonials.length,
+        testimonials: mongoReady ? await Testimonial.countDocuments() : memoryTestimonials.length,
         revenue,
         totalInventory,
         inventoryValue
@@ -1132,7 +1207,7 @@ app.get("/api/admin/overview", requireAdmin, async (_req, res, next) => {
 
 app.get("/api/admin/testimonials", requireAdmin, async (_req, res, next) => {
   try {
-    const testimonials = mongoReady ? await Testimonial.find({}).sort({ updatedAt: -1 }).lean() : seedTestimonials;
+    const testimonials = mongoReady ? await Testimonial.find({}).sort({ updatedAt: -1 }).lean() : memoryTestimonials;
     res.json({ testimonials: shapeTestimonials(testimonials), count: testimonials.length });
   } catch (error) {
     next(error);
@@ -1152,7 +1227,7 @@ app.get("/api/admin/categories", requireAdmin, async (_req, res, next) => {
   try {
     const products = mongoReady ? shapeProducts(await Product.find({}).lean()) : shapeProducts(memoryProducts);
     if (!mongoReady) {
-      const categories = await readCategories(products);
+      const categories = await readCategories(products, true);
       res.json({ categories, count: categories.length });
       return;
     }
@@ -1165,19 +1240,26 @@ app.get("/api/admin/categories", requireAdmin, async (_req, res, next) => {
 
 app.post("/api/admin/categories", requireAdmin, async (req, res, next) => {
   try {
-    if (!mongoReady) {
-      res.status(503).json({ message: "MongoDB is required for admin category updates" });
-      return;
-    }
     const category = sanitizeCategory(req.body);
     const message = validateCategory(category);
     if (message) {
       res.status(400).json({ message });
       return;
     }
+    if (!mongoReady) {
+      if (memoryCategories.some((item) => item.name.toLowerCase() === category.name.toLowerCase())) {
+        res.status(409).json({ message: "Category already exists in seed-data mode" });
+        return;
+      }
+      const created = { ...category, _id: memoryId(category.name), createdAt: new Date(), updatedAt: new Date() };
+      memoryCategories = [...memoryCategories, created].sort((a, b) => a.name.localeCompare(b.name));
+      const products = shapeProducts(memoryProducts);
+      res.status(201).json({ category: shapeCategories([created], products)[0], stored: false, mode: "seed-data" });
+      return;
+    }
     const created = await Category.create(category);
     const products = shapeProducts(await Product.find({}).lean());
-    res.status(201).json({ category: shapeCategories([created], products)[0] });
+    res.status(201).json({ category: shapeCategories([created], products)[0], stored: true });
   } catch (error) {
     next(error);
   }
@@ -1185,14 +1267,31 @@ app.post("/api/admin/categories", requireAdmin, async (req, res, next) => {
 
 app.put("/api/admin/categories/:id", requireAdmin, async (req, res, next) => {
   try {
-    if (!mongoReady) {
-      res.status(503).json({ message: "MongoDB is required for admin category updates" });
-      return;
-    }
     const category = sanitizeCategory(req.body);
     const message = validateCategory(category);
     if (message) {
       res.status(400).json({ message });
+      return;
+    }
+    if (!mongoReady) {
+      const index = findMemoryIndex(memoryCategories, req.params.id);
+      if (index === -1) {
+        res.status(404).json({ message: "Category not found" });
+        return;
+      }
+      const duplicateIndex = memoryCategories.findIndex((item, itemIndex) => item.name.toLowerCase() === category.name.toLowerCase() && itemIndex !== index);
+      if (duplicateIndex !== -1) {
+        res.status(409).json({ message: "Category already exists in seed-data mode" });
+        return;
+      }
+      const previous = memoryCategories[index];
+      const updated = { ...previous, ...category, _id: previous._id || memoryId(category.name), updatedAt: new Date() };
+      if (previous.name !== updated.name) {
+        memoryProducts = memoryProducts.map((product) => (product.category === previous.name ? { ...product, category: updated.name } : product));
+      }
+      memoryCategories = memoryCategories.map((item, itemIndex) => (itemIndex === index ? updated : item)).sort((a, b) => a.name.localeCompare(b.name));
+      const products = shapeProducts(memoryProducts);
+      res.json({ category: shapeCategories([updated], products)[0], stored: false, mode: "seed-data" });
       return;
     }
     const previous = await Category.findById(req.params.id).lean();
@@ -1205,7 +1304,7 @@ app.put("/api/admin/categories/:id", requireAdmin, async (req, res, next) => {
       await Product.updateMany({ category: previous.name }, { $set: { category: updated.name } });
     }
     const products = shapeProducts(await Product.find({}).lean());
-    res.json({ category: shapeCategories([updated], products)[0] });
+    res.json({ category: shapeCategories([updated], products)[0], stored: true });
   } catch (error) {
     next(error);
   }
@@ -1214,7 +1313,15 @@ app.put("/api/admin/categories/:id", requireAdmin, async (req, res, next) => {
 app.delete("/api/admin/categories/:id", requireAdmin, async (req, res, next) => {
   try {
     if (!mongoReady) {
-      res.status(503).json({ message: "MongoDB is required for admin category updates" });
+      const index = findMemoryIndex(memoryCategories, req.params.id);
+      if (index === -1) {
+        res.status(404).json({ message: "Category not found" });
+        return;
+      }
+      const deleted = memoryCategories[index];
+      memoryCategories = memoryCategories.filter((_, itemIndex) => itemIndex !== index);
+      memoryProducts = memoryProducts.map((product) => (product.category === deleted.name ? { ...product, category: "Uncategorized" } : product));
+      res.json({ ok: true, stored: false, mode: "seed-data" });
       return;
     }
     const deleted = await Category.findByIdAndDelete(req.params.id);
@@ -1223,7 +1330,7 @@ app.delete("/api/admin/categories/:id", requireAdmin, async (req, res, next) => 
       return;
     }
     await Product.updateMany({ category: deleted.name }, { $set: { category: "Uncategorized" } });
-    res.json({ ok: true });
+    res.json({ ok: true, stored: true });
   } catch (error) {
     next(error);
   }
@@ -1233,7 +1340,7 @@ app.get("/api/admin/brands", requireAdmin, async (_req, res, next) => {
   try {
     const products = mongoReady ? shapeProducts(await Product.find({}).lean()) : shapeProducts(memoryProducts);
     if (!mongoReady) {
-      const brands = await readBrands(products);
+      const brands = await readBrands(products, true);
       res.json({ brands, count: brands.length });
       return;
     }
@@ -1246,19 +1353,26 @@ app.get("/api/admin/brands", requireAdmin, async (_req, res, next) => {
 
 app.post("/api/admin/brands", requireAdmin, async (req, res, next) => {
   try {
-    if (!mongoReady) {
-      res.status(503).json({ message: "MongoDB is required for admin brand updates" });
-      return;
-    }
     const brand = sanitizeBrand(req.body);
     const message = validateBrand(brand);
     if (message) {
       res.status(400).json({ message });
       return;
     }
+    if (!mongoReady) {
+      if (memoryBrands.some((item) => item.name.toLowerCase() === brand.name.toLowerCase())) {
+        res.status(409).json({ message: "Brand already exists in seed-data mode" });
+        return;
+      }
+      const created = { ...brand, _id: memoryId(brand.name), createdAt: new Date(), updatedAt: new Date() };
+      memoryBrands = [...memoryBrands, created].sort((a, b) => a.name.localeCompare(b.name));
+      const products = shapeProducts(memoryProducts);
+      res.status(201).json({ brand: shapeBrands([created], products)[0], stored: false, mode: "seed-data" });
+      return;
+    }
     const created = await Brand.create(brand);
     const products = shapeProducts(await Product.find({}).lean());
-    res.status(201).json({ brand: shapeBrands([created], products)[0] });
+    res.status(201).json({ brand: shapeBrands([created], products)[0], stored: true });
   } catch (error) {
     next(error);
   }
@@ -1266,14 +1380,31 @@ app.post("/api/admin/brands", requireAdmin, async (req, res, next) => {
 
 app.put("/api/admin/brands/:id", requireAdmin, async (req, res, next) => {
   try {
-    if (!mongoReady) {
-      res.status(503).json({ message: "MongoDB is required for admin brand updates" });
-      return;
-    }
     const brand = sanitizeBrand(req.body);
     const message = validateBrand(brand);
     if (message) {
       res.status(400).json({ message });
+      return;
+    }
+    if (!mongoReady) {
+      const index = findMemoryIndex(memoryBrands, req.params.id);
+      if (index === -1) {
+        res.status(404).json({ message: "Brand not found" });
+        return;
+      }
+      const duplicateIndex = memoryBrands.findIndex((item, itemIndex) => item.name.toLowerCase() === brand.name.toLowerCase() && itemIndex !== index);
+      if (duplicateIndex !== -1) {
+        res.status(409).json({ message: "Brand already exists in seed-data mode" });
+        return;
+      }
+      const previous = memoryBrands[index];
+      const updated = { ...previous, ...brand, _id: previous._id || memoryId(brand.name), updatedAt: new Date() };
+      if (previous.name !== updated.name) {
+        memoryProducts = memoryProducts.map((product) => (product.brand === previous.name ? { ...product, brand: updated.name } : product));
+      }
+      memoryBrands = memoryBrands.map((item, itemIndex) => (itemIndex === index ? updated : item)).sort((a, b) => a.name.localeCompare(b.name));
+      const products = shapeProducts(memoryProducts);
+      res.json({ brand: shapeBrands([updated], products)[0], stored: false, mode: "seed-data" });
       return;
     }
     const previous = await Brand.findById(req.params.id).lean();
@@ -1286,7 +1417,7 @@ app.put("/api/admin/brands/:id", requireAdmin, async (req, res, next) => {
       await Product.updateMany({ brand: previous.name }, { $set: { brand: updated.name } });
     }
     const products = shapeProducts(await Product.find({}).lean());
-    res.json({ brand: shapeBrands([updated], products)[0] });
+    res.json({ brand: shapeBrands([updated], products)[0], stored: true });
   } catch (error) {
     next(error);
   }
@@ -1295,7 +1426,15 @@ app.put("/api/admin/brands/:id", requireAdmin, async (req, res, next) => {
 app.delete("/api/admin/brands/:id", requireAdmin, async (req, res, next) => {
   try {
     if (!mongoReady) {
-      res.status(503).json({ message: "MongoDB is required for admin brand updates" });
+      const index = findMemoryIndex(memoryBrands, req.params.id);
+      if (index === -1) {
+        res.status(404).json({ message: "Brand not found" });
+        return;
+      }
+      const deleted = memoryBrands[index];
+      memoryBrands = memoryBrands.filter((_, itemIndex) => itemIndex !== index);
+      memoryProducts = memoryProducts.map((product) => (product.brand === deleted.name ? { ...product, brand: "Unbranded" } : product));
+      res.json({ ok: true, stored: false, mode: "seed-data" });
       return;
     }
     const deleted = await Brand.findByIdAndDelete(req.params.id);
@@ -1304,7 +1443,7 @@ app.delete("/api/admin/brands/:id", requireAdmin, async (req, res, next) => {
       return;
     }
     await Product.updateMany({ brand: deleted.name }, { $set: { brand: "Unbranded" } });
-    res.json({ ok: true });
+    res.json({ ok: true, stored: true });
   } catch (error) {
     next(error);
   }
@@ -1312,7 +1451,7 @@ app.delete("/api/admin/brands/:id", requireAdmin, async (req, res, next) => {
 
 app.get("/api/admin/customers", requireAdmin, async (_req, res, next) => {
   try {
-    const customers = mongoReady ? await Customer.find({}).sort({ updatedAt: -1 }).lean() : [];
+    const customers = mongoReady ? await Customer.find({}).sort({ updatedAt: -1 }).lean() : memoryCustomers;
     res.json({
       customers: customers.map((customer) => ({
         id: String(customer._id),
@@ -1331,7 +1470,7 @@ app.get("/api/admin/customers", requireAdmin, async (_req, res, next) => {
 
 app.get("/api/admin/orders", requireAdmin, async (_req, res, next) => {
   try {
-    const orders = mongoReady ? await Order.find({}).sort({ updatedAt: -1 }).lean() : [];
+    const orders = mongoReady ? await Order.find({}).sort({ updatedAt: -1 }).lean() : memoryOrders;
     res.json({ orders: shapeOrders(orders), count: orders.length });
   } catch (error) {
     next(error);
@@ -1341,7 +1480,14 @@ app.get("/api/admin/orders", requireAdmin, async (_req, res, next) => {
 app.put("/api/admin/orders/:id/status", requireAdmin, async (req, res, next) => {
   try {
     if (!mongoReady) {
-      res.status(503).json({ message: "MongoDB is required for admin order updates" });
+      const index = findMemoryIndex(memoryOrders, req.params.id, "orderNumber");
+      if (index === -1) {
+        res.status(404).json({ message: "Order not found" });
+        return;
+      }
+      const updated = { ...memoryOrders[index], status: String(req.body.status || "Processing").trim(), updatedAt: new Date() };
+      memoryOrders = memoryOrders.map((order, orderIndex) => (orderIndex === index ? updated : order));
+      res.json({ order: shapeOrders([updated])[0], stored: false, mode: "seed-data" });
       return;
     }
     const updated = await Order.findByIdAndUpdate(req.params.id, { status: String(req.body.status || "Processing").trim() }, { new: true });
@@ -1349,7 +1495,7 @@ app.put("/api/admin/orders/:id/status", requireAdmin, async (req, res, next) => 
       res.status(404).json({ message: "Order not found" });
       return;
     }
-    res.json({ order: shapeOrders([updated])[0] });
+    res.json({ order: shapeOrders([updated])[0], stored: true });
   } catch (error) {
     next(error);
   }
@@ -1357,7 +1503,7 @@ app.put("/api/admin/orders/:id/status", requireAdmin, async (req, res, next) => 
 
 app.get("/api/admin/coupons", requireAdmin, async (_req, res, next) => {
   try {
-    const coupons = mongoReady ? await Coupon.find({}).sort({ updatedAt: -1 }).lean() : [];
+    const coupons = mongoReady ? await Coupon.find({}).sort({ updatedAt: -1 }).lean() : memoryCoupons;
     res.json({ coupons: shapeCoupons(coupons), count: coupons.length });
   } catch (error) {
     next(error);
@@ -1367,7 +1513,22 @@ app.get("/api/admin/coupons", requireAdmin, async (_req, res, next) => {
 app.get("/api/admin/visitors", requireAdmin, async (_req, res, next) => {
   try {
     if (!mongoReady) {
-      res.json({ visitors: [], stats: { total: 0, active: 0, inactive: 0 } });
+      const activeSince = new Date(Date.now() - 15 * 60 * 1000);
+      const visitors = memoryVisitors.slice(0, 100);
+      const total = memoryVisitors.length;
+      const active = memoryVisitors.filter((visitor) => visitor.lastSeenAt >= activeSince).length;
+      res.json({
+        visitors: visitors.map((visitor) => ({
+          id: String(visitor._id),
+          visitorId: visitor.visitorId,
+          page: visitor.page,
+          visits: visitor.visits,
+          firstSeenAt: visitor.firstSeenAt,
+          lastSeenAt: visitor.lastSeenAt,
+          active: visitor.lastSeenAt >= activeSince
+        })),
+        stats: { total, active, inactive: Math.max(0, total - active) }
+      });
       return;
     }
     const activeSince = new Date(Date.now() - 15 * 60 * 1000);
@@ -1491,18 +1652,24 @@ app.delete("/api/admin/products/:id", requireAdmin, async (req, res, next) => {
 
 app.post("/api/admin/coupons", requireAdmin, async (req, res, next) => {
   try {
-    if (!mongoReady) {
-      res.status(503).json({ message: "MongoDB is required for admin coupon updates" });
-      return;
-    }
     const coupon = sanitizeCoupon(req.body);
     const message = validateCoupon(coupon);
     if (message) {
       res.status(400).json({ message });
       return;
     }
+    if (!mongoReady) {
+      if (memoryCoupons.some((item) => item.code === coupon.code)) {
+        res.status(409).json({ message: "Coupon already exists in seed-data mode" });
+        return;
+      }
+      const created = { ...coupon, _id: coupon.code, createdAt: new Date(), updatedAt: new Date() };
+      memoryCoupons = [created, ...memoryCoupons];
+      res.status(201).json({ coupon: shapeCoupons([created])[0], stored: false, mode: "seed-data" });
+      return;
+    }
     const created = await Coupon.create(coupon);
-    res.status(201).json({ coupon: shapeCoupons([created])[0] });
+    res.status(201).json({ coupon: shapeCoupons([created])[0], stored: true });
   } catch (error) {
     next(error);
   }
@@ -1510,14 +1677,26 @@ app.post("/api/admin/coupons", requireAdmin, async (req, res, next) => {
 
 app.put("/api/admin/coupons/:id", requireAdmin, async (req, res, next) => {
   try {
-    if (!mongoReady) {
-      res.status(503).json({ message: "MongoDB is required for admin coupon updates" });
-      return;
-    }
     const coupon = sanitizeCoupon(req.body);
     const message = validateCoupon(coupon);
     if (message) {
       res.status(400).json({ message });
+      return;
+    }
+    if (!mongoReady) {
+      const index = findMemoryIndex(memoryCoupons, req.params.id, "code");
+      if (index === -1) {
+        res.status(404).json({ message: "Coupon not found" });
+        return;
+      }
+      const duplicateIndex = memoryCoupons.findIndex((item, itemIndex) => item.code === coupon.code && itemIndex !== index);
+      if (duplicateIndex !== -1) {
+        res.status(409).json({ message: "Coupon already exists in seed-data mode" });
+        return;
+      }
+      const updated = { ...memoryCoupons[index], ...coupon, _id: memoryCoupons[index]._id || coupon.code, updatedAt: new Date() };
+      memoryCoupons = memoryCoupons.map((item, itemIndex) => (itemIndex === index ? updated : item));
+      res.json({ coupon: shapeCoupons([updated])[0], stored: false, mode: "seed-data" });
       return;
     }
     const updated = await Coupon.findByIdAndUpdate(req.params.id, coupon, { new: true, runValidators: true });
@@ -1525,7 +1704,7 @@ app.put("/api/admin/coupons/:id", requireAdmin, async (req, res, next) => {
       res.status(404).json({ message: "Coupon not found" });
       return;
     }
-    res.json({ coupon: shapeCoupons([updated])[0] });
+    res.json({ coupon: shapeCoupons([updated])[0], stored: true });
   } catch (error) {
     next(error);
   }
@@ -1534,7 +1713,13 @@ app.put("/api/admin/coupons/:id", requireAdmin, async (req, res, next) => {
 app.delete("/api/admin/coupons/:id", requireAdmin, async (req, res, next) => {
   try {
     if (!mongoReady) {
-      res.status(503).json({ message: "MongoDB is required for admin coupon updates" });
+      const index = findMemoryIndex(memoryCoupons, req.params.id, "code");
+      if (index === -1) {
+        res.status(404).json({ message: "Coupon not found" });
+        return;
+      }
+      memoryCoupons = memoryCoupons.filter((_, itemIndex) => itemIndex !== index);
+      res.json({ ok: true, stored: false, mode: "seed-data" });
       return;
     }
     const deleted = await Coupon.findByIdAndDelete(req.params.id);
@@ -1542,7 +1727,7 @@ app.delete("/api/admin/coupons/:id", requireAdmin, async (req, res, next) => {
       res.status(404).json({ message: "Coupon not found" });
       return;
     }
-    res.json({ ok: true });
+    res.json({ ok: true, stored: true });
   } catch (error) {
     next(error);
   }
@@ -1550,18 +1735,20 @@ app.delete("/api/admin/coupons/:id", requireAdmin, async (req, res, next) => {
 
 app.post("/api/admin/testimonials", requireAdmin, async (req, res, next) => {
   try {
-    if (!mongoReady) {
-      res.status(503).json({ message: "MongoDB is required for admin review updates" });
-      return;
-    }
     const testimonial = sanitizeTestimonial(req.body);
     const message = validateTestimonial(testimonial);
     if (message) {
       res.status(400).json({ message });
       return;
     }
+    if (!mongoReady) {
+      const created = { ...testimonial, _id: `${memoryId(testimonial.name)}-${Date.now()}`, createdAt: new Date(), updatedAt: new Date() };
+      memoryTestimonials = [created, ...memoryTestimonials];
+      res.status(201).json({ testimonial: shapeTestimonials([created])[0], stored: false, mode: "seed-data" });
+      return;
+    }
     const created = await Testimonial.create(testimonial);
-    res.status(201).json({ testimonial: shapeTestimonials([created])[0] });
+    res.status(201).json({ testimonial: shapeTestimonials([created])[0], stored: true });
   } catch (error) {
     next(error);
   }
@@ -1569,14 +1756,21 @@ app.post("/api/admin/testimonials", requireAdmin, async (req, res, next) => {
 
 app.put("/api/admin/testimonials/:id", requireAdmin, async (req, res, next) => {
   try {
-    if (!mongoReady) {
-      res.status(503).json({ message: "MongoDB is required for admin review updates" });
-      return;
-    }
     const testimonial = sanitizeTestimonial(req.body);
     const message = validateTestimonial(testimonial);
     if (message) {
       res.status(400).json({ message });
+      return;
+    }
+    if (!mongoReady) {
+      const index = findMemoryIndex(memoryTestimonials, req.params.id);
+      if (index === -1) {
+        res.status(404).json({ message: "Review not found" });
+        return;
+      }
+      const updated = { ...memoryTestimonials[index], ...testimonial, updatedAt: new Date() };
+      memoryTestimonials = memoryTestimonials.map((item, itemIndex) => (itemIndex === index ? updated : item));
+      res.json({ testimonial: shapeTestimonials([updated])[0], stored: false, mode: "seed-data" });
       return;
     }
     const updated = await Testimonial.findByIdAndUpdate(req.params.id, testimonial, { new: true, runValidators: true });
@@ -1584,7 +1778,7 @@ app.put("/api/admin/testimonials/:id", requireAdmin, async (req, res, next) => {
       res.status(404).json({ message: "Review not found" });
       return;
     }
-    res.json({ testimonial: shapeTestimonials([updated])[0] });
+    res.json({ testimonial: shapeTestimonials([updated])[0], stored: true });
   } catch (error) {
     next(error);
   }
@@ -1593,7 +1787,13 @@ app.put("/api/admin/testimonials/:id", requireAdmin, async (req, res, next) => {
 app.delete("/api/admin/testimonials/:id", requireAdmin, async (req, res, next) => {
   try {
     if (!mongoReady) {
-      res.status(503).json({ message: "MongoDB is required for admin review updates" });
+      const index = findMemoryIndex(memoryTestimonials, req.params.id);
+      if (index === -1) {
+        res.status(404).json({ message: "Review not found" });
+        return;
+      }
+      memoryTestimonials = memoryTestimonials.filter((_, itemIndex) => itemIndex !== index);
+      res.json({ ok: true, stored: false, mode: "seed-data" });
       return;
     }
     const deleted = await Testimonial.findByIdAndDelete(req.params.id);
@@ -1601,7 +1801,7 @@ app.delete("/api/admin/testimonials/:id", requireAdmin, async (req, res, next) =
       res.status(404).json({ message: "Review not found" });
       return;
     }
-    res.json({ ok: true });
+    res.json({ ok: true, stored: true });
   } catch (error) {
     next(error);
   }
@@ -1609,7 +1809,7 @@ app.delete("/api/admin/testimonials/:id", requireAdmin, async (req, res, next) =
 
 app.get("/api/admin/settings", requireAdmin, async (_req, res, next) => {
   try {
-    const settings = mongoReady ? await SiteSettings.findOne({ key: "main" }).lean() : defaultSiteSettings;
+    const settings = mongoReady ? await SiteSettings.findOne({ key: "main" }).lean() : memorySettings;
     res.json({ settings: settings || defaultSiteSettings });
   } catch (error) {
     next(error);
@@ -1618,13 +1818,14 @@ app.get("/api/admin/settings", requireAdmin, async (_req, res, next) => {
 
 app.put("/api/admin/settings", requireAdmin, async (req, res, next) => {
   try {
+    const settings = sanitizeSettings(req.body);
     if (!mongoReady) {
-      res.status(503).json({ message: "MongoDB is required for admin settings updates" });
+      memorySettings = settings;
+      res.json({ settings: memorySettings, stored: false, mode: "seed-data" });
       return;
     }
-    const settings = sanitizeSettings(req.body);
     const updated = await SiteSettings.findOneAndUpdate({ key: "main" }, settings, { new: true, upsert: true, runValidators: true });
-    res.json({ settings: updated });
+    res.json({ settings: updated, stored: true });
   } catch (error) {
     next(error);
   }
