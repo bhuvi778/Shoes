@@ -26,6 +26,7 @@ const razorpayKeyId = process.env.RAZORPAY_KEY_ID || razorpayMerchantId;
 const razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET || "";
 
 let mongoReady = false;
+let memoryProducts = seedProducts.map((product) => ({ ...product }));
 let mongoStatus = {
   configured: Boolean(process.env.MONGODB_URI),
   database: "seed-data",
@@ -602,6 +603,11 @@ function shapeProducts(products) {
   });
 }
 
+function findMemoryProductIndex(id) {
+  const value = String(id || "").trim();
+  return memoryProducts.findIndex((product) => String(product._id || product.id || product.slug) === value || product.slug === value);
+}
+
 function shapeCategories(categories, products = []) {
   return categories.map((category) => {
     const item = category.toObject ? category.toObject() : category;
@@ -725,7 +731,7 @@ async function readTestimonials() {
 
 async function readProducts(query) {
   if (!mongoReady) {
-    return applyFilters(shapeProducts(seedProducts), query);
+    return applyFilters(shapeProducts(memoryProducts), query);
   }
 
   const products = await Product.find({}).lean();
@@ -1081,7 +1087,7 @@ app.post("/api/admin/login", async (req, res, next) => {
 
 app.get("/api/admin/overview", requireAdmin, async (_req, res, next) => {
   try {
-    const products = mongoReady ? await Product.find({}).lean() : seedProducts;
+    const products = mongoReady ? await Product.find({}).lean() : memoryProducts;
     const customers = mongoReady ? await Customer.find({}).sort({ updatedAt: -1 }).limit(8).lean() : [];
     const testimonialItems = mongoReady ? await Testimonial.find({}).sort({ updatedAt: -1 }).limit(6).lean() : seedTestimonials;
     const orderItems = mongoReady ? await Order.find({}).sort({ updatedAt: -1 }).limit(6).lean() : [];
@@ -1135,7 +1141,7 @@ app.get("/api/admin/testimonials", requireAdmin, async (_req, res, next) => {
 
 app.get("/api/admin/products", requireAdmin, async (_req, res, next) => {
   try {
-    const products = mongoReady ? await Product.find({}).sort({ updatedAt: -1 }).lean() : seedProducts;
+    const products = mongoReady ? await Product.find({}).sort({ updatedAt: -1 }).lean() : memoryProducts;
     res.json({ products: shapeProducts(products), count: products.length });
   } catch (error) {
     next(error);
@@ -1144,7 +1150,7 @@ app.get("/api/admin/products", requireAdmin, async (_req, res, next) => {
 
 app.get("/api/admin/categories", requireAdmin, async (_req, res, next) => {
   try {
-    const products = mongoReady ? shapeProducts(await Product.find({}).lean()) : shapeProducts(seedProducts);
+    const products = mongoReady ? shapeProducts(await Product.find({}).lean()) : shapeProducts(memoryProducts);
     if (!mongoReady) {
       const categories = await readCategories(products);
       res.json({ categories, count: categories.length });
@@ -1225,7 +1231,7 @@ app.delete("/api/admin/categories/:id", requireAdmin, async (req, res, next) => 
 
 app.get("/api/admin/brands", requireAdmin, async (_req, res, next) => {
   try {
-    const products = mongoReady ? shapeProducts(await Product.find({}).lean()) : shapeProducts(seedProducts);
+    const products = mongoReady ? shapeProducts(await Product.find({}).lean()) : shapeProducts(memoryProducts);
     if (!mongoReady) {
       const brands = await readBrands(products);
       res.json({ brands, count: brands.length });
@@ -1387,18 +1393,29 @@ app.get("/api/admin/visitors", requireAdmin, async (_req, res, next) => {
 
 app.post("/api/admin/products", requireAdmin, async (req, res, next) => {
   try {
-    if (!mongoReady) {
-      res.status(503).json({ message: "MongoDB is required for admin product updates" });
-      return;
-    }
     const product = sanitizeProduct(req.body);
     const message = validateProduct(product);
     if (message) {
       res.status(400).json({ message });
       return;
     }
+    if (!mongoReady) {
+      if (memoryProducts.some((item) => item.slug === product.slug)) {
+        res.status(409).json({ message: "Product slug already exists in seed-data mode" });
+        return;
+      }
+      const created = { ...product, _id: product.slug, createdAt: new Date(), updatedAt: new Date() };
+      memoryProducts = [created, ...memoryProducts];
+      res.status(201).json({
+        product: shapeProducts([created])[0],
+        stored: false,
+        mode: "seed-data",
+        message: "Product saved in seed-data mode. Connect MongoDB for permanent storage."
+      });
+      return;
+    }
     const created = await Product.create(product);
-    res.status(201).json({ product: shapeProducts([created])[0] });
+    res.status(201).json({ product: shapeProducts([created])[0], stored: true });
   } catch (error) {
     next(error);
   }
@@ -1406,14 +1423,31 @@ app.post("/api/admin/products", requireAdmin, async (req, res, next) => {
 
 app.put("/api/admin/products/:id", requireAdmin, async (req, res, next) => {
   try {
-    if (!mongoReady) {
-      res.status(503).json({ message: "MongoDB is required for admin product updates" });
-      return;
-    }
     const product = sanitizeProduct(req.body);
     const message = validateProduct(product);
     if (message) {
       res.status(400).json({ message });
+      return;
+    }
+    if (!mongoReady) {
+      const index = findMemoryProductIndex(req.params.id);
+      if (index === -1) {
+        res.status(404).json({ message: "Product not found" });
+        return;
+      }
+      const duplicateIndex = memoryProducts.findIndex((item, itemIndex) => item.slug === product.slug && itemIndex !== index);
+      if (duplicateIndex !== -1) {
+        res.status(409).json({ message: "Product slug already exists in seed-data mode" });
+        return;
+      }
+      const updated = { ...memoryProducts[index], ...product, _id: memoryProducts[index]._id || product.slug, updatedAt: new Date() };
+      memoryProducts = memoryProducts.map((item, itemIndex) => (itemIndex === index ? updated : item));
+      res.json({
+        product: shapeProducts([updated])[0],
+        stored: false,
+        mode: "seed-data",
+        message: "Product updated in seed-data mode. Connect MongoDB for permanent storage."
+      });
       return;
     }
     const updated = await Product.findByIdAndUpdate(req.params.id, product, { new: true, runValidators: true });
@@ -1421,7 +1455,7 @@ app.put("/api/admin/products/:id", requireAdmin, async (req, res, next) => {
       res.status(404).json({ message: "Product not found" });
       return;
     }
-    res.json({ product: shapeProducts([updated])[0] });
+    res.json({ product: shapeProducts([updated])[0], stored: true });
   } catch (error) {
     next(error);
   }
@@ -1430,7 +1464,18 @@ app.put("/api/admin/products/:id", requireAdmin, async (req, res, next) => {
 app.delete("/api/admin/products/:id", requireAdmin, async (req, res, next) => {
   try {
     if (!mongoReady) {
-      res.status(503).json({ message: "MongoDB is required for admin product updates" });
+      const index = findMemoryProductIndex(req.params.id);
+      if (index === -1) {
+        res.status(404).json({ message: "Product not found" });
+        return;
+      }
+      memoryProducts = memoryProducts.filter((_, itemIndex) => itemIndex !== index);
+      res.json({
+        ok: true,
+        stored: false,
+        mode: "seed-data",
+        message: "Product deleted in seed-data mode. Connect MongoDB for permanent storage."
+      });
       return;
     }
     const deleted = await Product.findByIdAndDelete(req.params.id);
