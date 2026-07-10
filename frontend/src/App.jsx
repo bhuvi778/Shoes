@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { baseFilters, BRAND_LOGO, BRAND_NAME } from "./lib/constants.js";
 import { buildQuery } from "./lib/format.js";
 import { apiPath } from "./lib/api.js";
@@ -83,46 +83,44 @@ export default function App() {
   const [toast, setToast] = useState("");
   const [paymentProcessing, setPaymentProcessing] = useState(false);
 
-  const query = useMemo(() => buildQuery(filters), [filters]);
-  const cartCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
-  const favoriteProducts = allProducts.filter((product) => favorites.has(product.id));
-  const similarProducts = selectedProduct
-    ? allProducts
-        .filter((product) => product.id !== selectedProduct.id)
-        .filter((product) => product.category === selectedProduct.category || product.brand === selectedProduct.brand)
-        .slice(0, 4)
-    : [];
+  const deferredFilters = useDeferredValue(filters);
+  const query = useMemo(() => buildQuery(deferredFilters), [deferredFilters]);
+  const cartCount = useMemo(() => cartItems.reduce((sum, item) => sum + item.quantity, 0), [cartItems]);
+  const favoriteProducts = useMemo(() => allProducts.filter((product) => favorites.has(product.id)), [allProducts, favorites]);
+  const similarProducts = useMemo(
+    () =>
+      selectedProduct
+        ? allProducts
+            .filter((product) => product.id !== selectedProduct.id)
+            .filter((product) => product.category === selectedProduct.category || product.brand === selectedProduct.brand)
+            .slice(0, 4)
+        : [],
+    [allProducts, selectedProduct]
+  );
 
-  function reloadStorefrontData() {
-    fetch(apiPath("/api/settings"))
-      .then((response) => response.json())
-      .then((data) => setSiteSettings(data.settings || null))
-      .catch((error) => console.error(error));
+  const reloadStorefrontData = useCallback(() => {
+    const endpoints = [
+      fetch(apiPath("/api/settings")).then((response) => response.json()),
+      fetch(apiPath("/api/products")).then((response) => response.json()),
+      fetch(apiPath("/api/categories")).then((response) => response.json()),
+      fetch(apiPath("/api/brands")).then((response) => response.json()),
+      fetch(apiPath("/api/testimonials")).then((response) => response.json())
+    ];
 
-    fetch(apiPath("/api/products"))
-      .then((response) => response.json())
-      .then((data) => setAllProducts(data.products || []))
+    Promise.all(endpoints)
+      .then(([settingsData, productData, categoryData, brandData, testimonialData]) => {
+        setSiteSettings(settingsData.settings || null);
+        setAllProducts(productData.products || []);
+        setCategoryCards(categoryData.categories || []);
+        setBrands(brandData.brands || []);
+        setTestimonials(testimonialData.testimonials || []);
+      })
       .catch((error) => console.error(error));
-
-    fetch(apiPath("/api/categories"))
-      .then((response) => response.json())
-      .then((data) => setCategoryCards(data.categories || []))
-      .catch((error) => console.error(error));
-
-    fetch(apiPath("/api/brands"))
-      .then((response) => response.json())
-      .then((data) => setBrands(data.brands || []))
-      .catch((error) => console.error(error));
-
-    fetch(apiPath("/api/testimonials"))
-      .then((response) => response.json())
-      .then((data) => setTestimonials(data.testimonials || []))
-      .catch((error) => console.error(error));
-  }
+  }, []);
 
   useEffect(() => {
     reloadStorefrontData();
-  }, []);
+  }, [reloadStorefrontData]);
 
   useEffect(() => {
     if (isAdminPortal) return undefined;
@@ -196,10 +194,11 @@ export default function App() {
 
   useEffect(() => {
     const elements = document.querySelectorAll(
-      ".section-kicker, .product-card, .brand-card, .trust-item, .testimonial-card, .split-story, .collection-hero, .detail-layout, .dash-card, .dash-header, .newsletter-section"
+      ".section-kicker, .split-story, .collection-hero, .detail-layout, .dash-card, .dash-header, .newsletter-section, .admin-card, .admin-products-hero"
     );
     if (!("IntersectionObserver" in window) || elements.length === 0) return undefined;
 
+    let frameId = 0;
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
@@ -212,37 +211,42 @@ export default function App() {
       { threshold: 0.08, rootMargin: "0px 0px -40px 0px" }
     );
 
-    elements.forEach((element, index) => {
-      element.classList.add("reveal");
-      element.style.setProperty("--reveal-delay", `${Math.min(index % 8, 7) * 55}ms`);
-      observer.observe(element);
+    frameId = window.requestAnimationFrame(() => {
+      elements.forEach((element, index) => {
+        element.classList.add("reveal");
+        element.style.setProperty("--reveal-delay", `${Math.min(index % 5, 4) * 35}ms`);
+        observer.observe(element);
+      });
     });
 
-    return () => observer.disconnect();
-  }, [page, selectedProduct?.id, products, dashSection, allProducts.length]);
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      observer.disconnect();
+    };
+  }, [page, selectedProduct?.id, dashSection]);
 
-  function openCollection() {
+  const openCollection = useCallback(() => {
     setPage("collection");
     setSelectedProduct(null);
     setInfoSlug("");
-  }
+  }, []);
 
-  function openDetails(product) {
+  const openDetails = useCallback((product) => {
     setSelectedProduct(product);
     setPage("detail");
     setInfoSlug("");
-  }
+  }, []);
 
-  function toggleFavorite(id) {
+  const toggleFavorite = useCallback((id) => {
     setFavorites((current) => {
       const next = new Set(current);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-  }
+  }, []);
 
-  function addToCart(product) {
+  const addToCart = useCallback((product) => {
     setCartItems((current) => {
       const existing = current.find((item) => item.id === product.id);
       if (existing) {
@@ -251,24 +255,24 @@ export default function App() {
       return [...current, { ...product, quantity: 1 }];
     });
     setCartOpen(true);
-  }
+  }, []);
 
-  function removeOne(id) {
+  const removeOne = useCallback((id) => {
     setCartItems((current) =>
       current
         .map((item) => (item.id === id ? { ...item, quantity: item.quantity - 1 } : item))
         .filter((item) => item.quantity > 0)
     );
-  }
+  }, []);
 
-  function deleteItem(id) {
+  const deleteItem = useCallback((id) => {
     setCartItems((current) => current.filter((item) => item.id !== id));
-  }
+  }, []);
 
-  function focusSearch() {
+  const focusSearch = useCallback(() => {
     openCollection();
     window.setTimeout(() => searchRef.current?.focus(), 350);
-  }
+  }, [openCollection]);
 
   function goHomeSection(sectionId) {
     setPage("home");

@@ -64,11 +64,11 @@ export default function HomePage({
       <section className="hero" aria-label={hero.eyebrow || "Storefront hero"}>
         <div className="hero-media">
           {activeHeroSlide.type === "video" ? (
-            <video key={activeHeroUrl} src={activeHeroUrl} poster={activeHeroSlide.poster || activeMobileHeroUrl} autoPlay muted loop playsInline />
+            <video key={activeHeroUrl} src={activeHeroUrl} poster={activeHeroSlide.poster || activeMobileHeroUrl} autoPlay muted loop playsInline preload="metadata" />
           ) : (
             <picture>
               <source media="(max-width: 640px)" srcSet={activeMobileHeroUrl} />
-              <img key={activeHeroUrl} src={activeHeroUrl} alt="" />
+              <img key={activeHeroUrl} src={activeHeroUrl} alt="" decoding="async" fetchPriority="high" />
             </picture>
           )}
           {heroSlides.length > 1 && (
@@ -133,7 +133,7 @@ export default function HomePage({
                 onOpenCollection();
               }}
             >
-              <img src={category.image} alt="" loading="lazy" />
+              <img src={category.image} alt="" loading="lazy" decoding="async" />
               <span>{category.name}</span>
               <strong>{category.count} styles from {inr(category.fromPrice)}</strong>
             </button>
@@ -161,7 +161,7 @@ export default function HomePage({
                 onOpenCollection();
               }}
             >
-              <img src={brand.image} alt="" loading="lazy" />
+              <img src={brand.image} alt="" loading="lazy" decoding="async" />
               <span>{brand.name}</span>
               <strong>{brand.count} styles from {inr(brand.fromPrice)}</strong>
             </button>
@@ -192,7 +192,7 @@ export default function HomePage({
         {editorials.map((item) => (
           <article className={`split-story ${item.reverse ? "is-reverse" : ""}`} key={item.title}>
             <div className="split-image">
-              <img src={item.image} alt="" loading="lazy" />
+              <img src={item.image} alt="" loading="lazy" decoding="async" />
             </div>
             <div className="split-copy">
               <p className="eyebrow">{item.eyebrow}</p>
